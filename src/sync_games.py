@@ -137,8 +137,8 @@ def get_existing_lichess_games(client, limit=100):
             moves = game.get('moves', '')
             # Normalize moves: remove spaces
             moves_clean = moves.replace(' ', '')
-            # use first 20 chars of moves as signature component
-            moves_sig = moves_clean[:20]
+            # use first 50 chars of moves as signature component
+            moves_sig = moves_clean[:50]
             
             signatures.add((white, black, moves_sig))
             
@@ -223,11 +223,24 @@ def main():
                 # Finally, strip all whitespace
                 moves_clean_pgn = raw_moves.replace(' ', '').replace('\n', '').replace('\r', '')
                 
-                candidate_sig = (c_white, c_black, moves_clean_pgn[:20])
+                # Use a longer signature (50 chars)
+                candidate_sig = (c_white, c_black, moves_clean_pgn[:50])
+                
+                # DEBUG: Log signatures to diagnose mismatch
+                # Only log for the first few checks to avoid spam, or if we are about to import
+                # logger.info(f"Candidate Sig: {candidate_sig}")
+                # if len(existing_signatures) > 0:
+                #    first_sig = next(iter(existing_signatures))
+                #    logger.info(f"Sample Existing Sig: {first_sig}")
                 
                 if candidate_sig in existing_signatures:
                     logger.info(f"Skipping game {datetime.fromtimestamp(end_time)} vs {c_black if c_white == CHESSCOM_USERNAME.lower() else c_white} (Local Duplicate)")
                     continue
+                else:
+                     # Log why we are importing (did not find in existing)
+                     # Useful for debugging the mismatch
+                     logger.debug(f"Signature NOT found: {candidate_sig}")
+
 
             if pgn:
                 logger.info(f"Found game ended at {datetime.fromtimestamp(end_time)}. Attempting import...")
