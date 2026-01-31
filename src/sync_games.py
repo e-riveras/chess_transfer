@@ -3,6 +3,7 @@ import logging
 import requests
 import berserk
 import time
+import re
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 
@@ -154,157 +155,92 @@ def main():
     logger.info("Starting Chess.com to Lichess sync...")
     
     client = get_lichess_client()
-    
-    import re
-    
-        # ... (inside main loop) ...
+
+    # 1. Fetch existing games signatures to prevent duplicates
+    logger.info("Fetching recent Lichess games for duplicate checking...")
+    existing_signatures, latest_lichess_date = get_existing_lichess_games(client, limit=500)
+    logger.info(f"Loaded {len(existing_signatures)} recent games for duplicate checking.")
+
+    if latest_lichess_date:
+        logger.info(f"Latest Lichess game date: {latest_lichess_date}")
+
+    # 2. Get Chess.com archives
+    archives = get_chesscom_archives(CHESSCOM_USERNAME)
+    archives.sort(reverse=True) 
+
+    for archive_url in archives:
+        logger.info(f"Checking archive: {archive_url}")
         
-            # 1. Fetch existing games signatures to prevent duplicates
-            logger.info("Fetching recent Lichess games for duplicate checking...")
-            existing_signatures, latest_lichess_date = get_existing_lichess_games(client, limit=500)
-            logger.info(f"Loaded {len(existing_signatures)} recent games for duplicate checking.")
-        
+        try:
+            parts = archive_url.split('/')
+            year = int(parts[-2])
+            month = int(parts[-1])
+            archive_month_start = datetime(year, month, 1, tzinfo=timezone.utc)
+            
             if latest_lichess_date:
-                logger.info(f"Latest Lichess game date: {latest_lichess_date}")
-        
-            # 2. Get Chess.com archives
-            archives = get_chesscom_archives(CHESSCOM_USERNAME)
-            archives.sort(reverse=True) 
-        
-            for archive_url in archives:
-                logger.info(f"Checking archive: {archive_url}")
+                # Ensure latest_lichess_date is timezone aware
+                if latest_lichess_date.tzinfo is None:
+                    latest_lichess_date = latest_lichess_date.replace(tzinfo=timezone.utc)
+                    
+                latest_game_month_start = latest_lichess_date.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
                 
-                try:
-                    parts = archive_url.split('/')
-                    year = int(parts[-2])
-                    month = int(parts[-1])
-                    archive_month_start = datetime(year, month, 1, tzinfo=timezone.utc)
-                    
-                    if latest_lichess_date:
-                        # Ensure latest_lichess_date is timezone aware
-                        if latest_lichess_date.tzinfo is None:
-                            latest_lichess_date = latest_lichess_date.replace(tzinfo=timezone.utc)
-                            
-                        latest_game_month_start = latest_lichess_date.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-                        
-                        if archive_month_start < latest_game_month_start:
-                            logger.info("Reached archives older than latest Lichess game. Stopping.")
-                            break
-                except Exception as e:
-                    logger.warning(f"Could not parse archive date optimization: {e}")
+                if archive_month_start < latest_game_month_start:
+                    logger.info("Reached archives older than latest Lichess game. Stopping.")
+                    break
+        except Exception as e:
+            logger.warning(f"Could not parse archive date optimization: {e}")
+
+        games = get_games_from_archive(archive_url)
+        archive_has_new_games = False
         
-                games = get_games_from_archive(archive_url)
-                archive_has_new_games = False
+        for game in games:
+            end_time = game.get('end_time')
+            pgn = game.get('pgn', '')
+            
+            # Construct signature for this candidate game
+            c_white = game['white']['username'].lower()
+            c_black = game['black']['username'].lower()
+            
+            # Extract moves from PGN
+            move_start_index = pgn.find("1. ")
+            if move_start_index != -1:
+                # Extract moves part
+                raw_moves = pgn[move_start_index:]
                 
-                for game in games:
-                    end_time = game.get('end_time')
-                    
-                    # Construct signature for this candidate game
-                    c_white = game['white']['username'].lower()
-                    c_black = game['black']['username'].lower()
-                    
-                    pgn = game.get('pgn', '')
-                    
-                    # Extract moves from PGN
-                    # PGN usually contains metadata in brackets [], then moves starting with 1.
-                    # We want to ignore headers.
-                    # Simple heuristic: find the first "1. "
-                    move_start_index = pgn.find("1. ")
-                    if move_start_index != -1:
-                        # Extract moves part
-                        raw_moves = pgn[move_start_index:]
-                        
-                        # Robust cleanup:
-                        # 1. Remove comments { ... }
-                        # 2. Remove variations ( ... ) - non-recursive
-                        # 3. Remove move numbers 1. 1...
-                        # 4. Remove numeric annotation glyphs like $1, $2
-                        # 5. Remove result 1-0, 0-1, 1/2-1/2 (at the end usually)
-                        
-                        # Remove comments
-                        raw_moves = re.sub(r'\{.*?\}', '', raw_moves)
-                        # Remove variations
-                        raw_moves = re.sub(r'\(.*?\)', '', raw_moves)
-                        # Remove numeric annotation glyphs
-                        raw_moves = re.sub(r'\$\d+', '', raw_moves)
-                        
-                        # Remove everything that is not a letter? 
-                        # Moves like O-O-O contain dashes.
-                        # Moves like R1a3 contain digits.
-                        # Promotion: e8=Q
-                        # Check: + #
-                        
-                        # Strategy: Remove move numbers "1.", "1..."
-                        raw_moves = re.sub(r'\d+\.+', '', raw_moves)
-                        
-                        # Remove Result (1-0, 0-1, 1/2-1/2) often found at end
-                        raw_moves = re.sub(r'(1-0|0-1|1/2-1/2)', '', raw_moves)
-        
-                        # Finally, strip all whitespace
-                        moves_clean_pgn = raw_moves.replace(' ', '').replace('\n', '').replace('\r', '')
-                        
-                        candidate_sig = (c_white, c_black, moves_clean_pgn[:20])
-                        
-                        # Debug logging for first few games to verify signature match
-                        # logger.debug(f"Signature for {game['url']}: {candidate_sig}")
-                        
-                        if candidate_sig in existing_signatures:
-                            logger.info(f"Skipping game {datetime.fromtimestamp(end_time)} vs {c_black if c_white == CHESSCOM_USERNAME.lower() else c_white} (Local Duplicate)")
-                            continue            if pgn:
+                # Robust cleanup:
+                # 1. Remove comments { ... }
+                # 2. Remove variations ( ... )
+                # 3. Remove numeric annotation glyphs like $1, $2
+                # 4. Remove move numbers 1. 1...
+                # 5. Remove result 1-0, 0-1, 1/2-1/2
+                
+                raw_moves = re.sub(r'\{.*?\}', '', raw_moves)
+                raw_moves = re.sub(r'\(.*?\)', '', raw_moves)
+                raw_moves = re.sub(r'\$\d+', '', raw_moves)
+                raw_moves = re.sub(r'\d+\.+', '', raw_moves)
+                raw_moves = re.sub(r'(1-0|0-1|1/2-1/2)', '', raw_moves)
+
+                # Finally, strip all whitespace
+                moves_clean_pgn = raw_moves.replace(' ', '').replace('\n', '').replace('\r', '')
+                
+                candidate_sig = (c_white, c_black, moves_clean_pgn[:20])
+                
+                if candidate_sig in existing_signatures:
+                    logger.info(f"Skipping game {datetime.fromtimestamp(end_time)} vs {c_black if c_white == CHESSCOM_USERNAME.lower() else c_white} (Local Duplicate)")
+                    continue
+
+            if pgn:
                 logger.info(f"Found game ended at {datetime.fromtimestamp(end_time)}. Attempting import...")
                 import_status = import_game_to_lichess(client, pgn)
                 if import_status == "IMPORTED":
-                    # Respect rate limits - Lichess can be strict
-                    # If we just imported, sleep significantly
                     time.sleep(6)
                     archive_has_new_games = True
-                    
-                    # Add to local signatures to prevent re-importing in same run if duplicate exists in archive?
-                    # Unlikely for chess.com but good practice.
-                    # But we don't have moves parsed easily here to add back to set.
-                    
                 elif import_status == "DUPLICATE":
-                    # No need to sleep long for duplicates, but be polite to avoid 429 on check
                     time.sleep(1)
                 else:
-                    # Error occurred
                     time.sleep(1)
-
-            
-            # NEW STRATEGY IMPLEMENTED BELOW:
-            # We will use (White, Black, Result) as a coarse filter.
-            # If coarse filter matches, we inspect further or just skip to be safe?
-            # No, skipping is dangerous.
-            
-            # Let's use (White, Black, Timestamp-Date).
-            # Convert Chess.com end_time to Date (YYYY-MM-DD).
-            # Check if Lichess has a game with same White, Black, and `createdAt` date?
-            # NO, `createdAt` is import date.
-            
-            # Does Lichess have `originalDate`?
-            # The `date` field in export might correspond to PGN Date.
-            # Let's assume it does.
-            
-    # Redefine function to use Date if available
-
-
-        
-        # If we went through a whole archive and found NO new games (and we have a cutoff),
-        # and since we are iterating archives backwards (newest months first),
-        # logic dictates we *could* stop early if we assume strict ordering.
-        # But monthly archives are coarse. 
-        # Let's just process the last few months to be safe, or relies on the loop logic.
-        # If we find a game older than cutoff, we skip.
-        # If we process a whole month and all are older, we can probably stop fetching older months.
         
         if latest_lichess_date and not archive_has_new_games:
-            # Check the last game of this archive. If it's older than cutoff, 
-            # and we are iterating backwards in time (months), then all subsequent months are also older.
-            # Archives list is sorted? Yes, usually chronologically by month string.
-            # We sorted archives reverse=True.
-            
-            # To be robust, let's just break if the *latest* game in this archive is older than our cutoff.
-            # But the loop above filtered game-by-game.
             pass
 
     logger.info("Sync complete.")
