@@ -159,60 +159,98 @@ def main():
     
         # ... (inside main loop) ...
         
-        # 1. Fetch existing games signatures to prevent duplicates
-        logger.info("Fetching recent Lichess games for duplicate checking...")
-        existing_signatures, latest_lichess_date = get_existing_lichess_games(client, limit=500)
-        logger.info(f"Loaded {len(existing_signatures)} recent games for duplicate checking.")
-    
-        # ...
-    
-                # Extract moves from PGN
-                # PGN usually contains metadata in brackets [], then moves starting with 1.
-                # We want to ignore headers.
-                # Simple heuristic: find the first "1. "
-                move_start_index = pgn.find("1. ")
-                if move_start_index != -1:
-                    # Extract moves part
-                    raw_moves = pgn[move_start_index:]
+            # 1. Fetch existing games signatures to prevent duplicates
+            logger.info("Fetching recent Lichess games for duplicate checking...")
+            existing_signatures, latest_lichess_date = get_existing_lichess_games(client, limit=500)
+            logger.info(f"Loaded {len(existing_signatures)} recent games for duplicate checking.")
+        
+            if latest_lichess_date:
+                logger.info(f"Latest Lichess game date: {latest_lichess_date}")
+        
+            # 2. Get Chess.com archives
+            archives = get_chesscom_archives(CHESSCOM_USERNAME)
+            archives.sort(reverse=True) 
+        
+            for archive_url in archives:
+                logger.info(f"Checking archive: {archive_url}")
+                
+                try:
+                    parts = archive_url.split('/')
+                    year = int(parts[-2])
+                    month = int(parts[-1])
+                    archive_month_start = datetime(year, month, 1, tzinfo=timezone.utc)
                     
-                    # Robust cleanup:
-                    # 1. Remove comments { ... }
-                    # 2. Remove variations ( ... ) - non-recursive
-                    # 3. Remove move numbers 1. 1...
-                    # 4. Remove numeric annotation glyphs like $1, $2
-                    # 5. Remove result 1-0, 0-1, 1/2-1/2 (at the end usually)
+                    if latest_lichess_date:
+                        # Ensure latest_lichess_date is timezone aware
+                        if latest_lichess_date.tzinfo is None:
+                            latest_lichess_date = latest_lichess_date.replace(tzinfo=timezone.utc)
+                            
+                        latest_game_month_start = latest_lichess_date.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+                        
+                        if archive_month_start < latest_game_month_start:
+                            logger.info("Reached archives older than latest Lichess game. Stopping.")
+                            break
+                except Exception as e:
+                    logger.warning(f"Could not parse archive date optimization: {e}")
+        
+                games = get_games_from_archive(archive_url)
+                archive_has_new_games = False
+                
+                for game in games:
+                    end_time = game.get('end_time')
                     
-                    # Remove comments
-                    raw_moves = re.sub(r'\{.*?\}', '', raw_moves)
-                    # Remove variations
-                    raw_moves = re.sub(r'\(.*?\)', '', raw_moves)
-                    # Remove numeric annotation glyphs
-                    raw_moves = re.sub(r'\$\d+', '', raw_moves)
+                    # Construct signature for this candidate game
+                    c_white = game['white']['username'].lower()
+                    c_black = game['black']['username'].lower()
                     
-                    # Remove everything that is not a letter? 
-                    # Moves like O-O-O contain dashes.
-                    # Moves like R1a3 contain digits.
-                    # Promotion: e8=Q
-                    # Check: + #
+                    pgn = game.get('pgn', '')
                     
-                    # Strategy: Remove move numbers "1.", "1..."
-                    raw_moves = re.sub(r'\d+\.+', '', raw_moves)
-                    
-                    # Remove Result (1-0, 0-1, 1/2-1/2) often found at end
-                    raw_moves = re.sub(r'(1-0|0-1|1/2-1/2)', '', raw_moves)
-    
-                    # Finally, strip all whitespace
-                    moves_clean_pgn = raw_moves.replace(' ', '').replace('\n', '').replace('\r', '')
-                    
-                    candidate_sig = (c_white, c_black, moves_clean_pgn[:20])
-                    
-                    # Debug logging for first few games to verify signature match
-                    # logger.debug(f"Signature for {game['url']}: {candidate_sig}")
-                    
-                    if candidate_sig in existing_signatures:
-                        logger.info(f"Skipping game {datetime.fromtimestamp(end_time)} vs {c_black if c_white == CHESSCOM_USERNAME.lower() else c_white} (Local Duplicate)")
-                        continue
-            if pgn:
+                    # Extract moves from PGN
+                    # PGN usually contains metadata in brackets [], then moves starting with 1.
+                    # We want to ignore headers.
+                    # Simple heuristic: find the first "1. "
+                    move_start_index = pgn.find("1. ")
+                    if move_start_index != -1:
+                        # Extract moves part
+                        raw_moves = pgn[move_start_index:]
+                        
+                        # Robust cleanup:
+                        # 1. Remove comments { ... }
+                        # 2. Remove variations ( ... ) - non-recursive
+                        # 3. Remove move numbers 1. 1...
+                        # 4. Remove numeric annotation glyphs like $1, $2
+                        # 5. Remove result 1-0, 0-1, 1/2-1/2 (at the end usually)
+                        
+                        # Remove comments
+                        raw_moves = re.sub(r'\{.*?\}', '', raw_moves)
+                        # Remove variations
+                        raw_moves = re.sub(r'\(.*?\)', '', raw_moves)
+                        # Remove numeric annotation glyphs
+                        raw_moves = re.sub(r'\$\d+', '', raw_moves)
+                        
+                        # Remove everything that is not a letter? 
+                        # Moves like O-O-O contain dashes.
+                        # Moves like R1a3 contain digits.
+                        # Promotion: e8=Q
+                        # Check: + #
+                        
+                        # Strategy: Remove move numbers "1.", "1..."
+                        raw_moves = re.sub(r'\d+\.+', '', raw_moves)
+                        
+                        # Remove Result (1-0, 0-1, 1/2-1/2) often found at end
+                        raw_moves = re.sub(r'(1-0|0-1|1/2-1/2)', '', raw_moves)
+        
+                        # Finally, strip all whitespace
+                        moves_clean_pgn = raw_moves.replace(' ', '').replace('\n', '').replace('\r', '')
+                        
+                        candidate_sig = (c_white, c_black, moves_clean_pgn[:20])
+                        
+                        # Debug logging for first few games to verify signature match
+                        # logger.debug(f"Signature for {game['url']}: {candidate_sig}")
+                        
+                        if candidate_sig in existing_signatures:
+                            logger.info(f"Skipping game {datetime.fromtimestamp(end_time)} vs {c_black if c_white == CHESSCOM_USERNAME.lower() else c_white} (Local Duplicate)")
+                            continue            if pgn:
                 logger.info(f"Found game ended at {datetime.fromtimestamp(end_time)}. Attempting import...")
                 import_status = import_game_to_lichess(client, pgn)
                 if import_status == "IMPORTED":
