@@ -113,23 +113,44 @@ def main():
     # 2. Get Chess.com archives
     archives = get_chesscom_archives(CHESSCOM_USERNAME)
     
-    # We process archives in reverse order (newest first) to get recent games quicker,
-    # but for a full sync logic, we might want chronological. 
-    # However, since we have a cutoff date, we can go backwards and stop when we hit the cutoff.
+    # We process archives in reverse order (newest first) to get recent games quicker
     archives.sort(reverse=True) 
     
-    games_to_import = []
+    import time
+    from datetime import timezone
 
     for archive_url in archives:
         logger.info(f"Checking archive: {archive_url}")
+        
+        # Optimization: Parse archive date from URL and compare with latest_lichess_date
+        # URL format: .../games/YYYY/MM
+        try:
+            parts = archive_url.split('/')
+            year = int(parts[-2])
+            month = int(parts[-1])
+            # Create a timezone-aware datetime for the start of the archive month
+            archive_month_start = datetime(year, month, 1, tzinfo=timezone.utc)
+            
+            if latest_lichess_date:
+                # If the entire archive month is strictly before the month of the latest game,
+                # we can stop processing older archives.
+                # Logic: If latest_game is in Jan 2026, we check Jan 2026.
+                # When we hit Dec 2025, its start (Dec 1) is < Start of Jan (Jan 1).
+                # So we can break.
+                
+                # Get the start of the month for the latest lichess game
+                latest_game_month_start = latest_lichess_date.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+                
+                if archive_month_start < latest_game_month_start:
+                    logger.info("Reached archives older than latest Lichess game. Stopping.")
+                    break
+        except Exception as e:
+            logger.warning(f"Could not parse archive date optimization: {e}")
+
         games = get_games_from_archive(archive_url)
         
         # Archives contain games in chronological order usually. 
         # We want to process them.
-        
-        # Reverse games to check newest first? 
-        # Actually, if we want to import *new* games, we should look at games 
-        # that happened AFTER latest_lichess_date.
         
         archive_has_new_games = False
         
@@ -160,7 +181,9 @@ def main():
             pgn = game.get('pgn')
             if pgn:
                 logger.info(f"Found new game ended at {datetime.fromtimestamp(end_time)}. Importing...")
-                import_game_to_lichess(client, pgn)
+                if import_game_to_lichess(client, pgn):
+                    # Respect rate limits - Lichess can be strict
+                    time.sleep(6)
                 archive_has_new_games = True
         
         # If we went through a whole archive and found NO new games (and we have a cutoff),
