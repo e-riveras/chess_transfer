@@ -18,12 +18,13 @@ class TestSyncGames(unittest.TestCase):
     @patch('src.sync_games.import_game_to_lichess')
     @patch('src.sync_games.get_games_from_archive')
     @patch('src.sync_games.get_chesscom_archives')
-    @patch('src.sync_games.get_latest_lichess_game_date')
+    @patch('src.sync_games.get_existing_lichess_games')
     @patch('src.sync_games.get_lichess_client')
     @patch('src.sync_games.LICHESS_TOKEN', 'fake_token')
-    def test_main_sync_flow(self, mock_get_client, mock_get_date, mock_get_archives, mock_get_games, mock_import, mock_sleep):
+    def test_main_sync_flow(self, mock_get_client, mock_get_existing, mock_get_archives, mock_get_games, mock_import, mock_sleep):
         # Setup mocks
-        mock_get_date.return_value = datetime.datetime(2023, 1, 1, tzinfo=datetime.timezone.utc)
+        # Return existing signatures (empty set) and latest date
+        mock_get_existing.return_value = (set(), datetime.datetime(2023, 1, 1, tzinfo=datetime.timezone.utc))
         
         # Return one archive
         mock_get_archives.return_value = ['https://api.chess.com/pub/player/erivera90/games/2023/01']
@@ -32,8 +33,18 @@ class TestSyncGames(unittest.TestCase):
         # Game 1: Older than latest (attempted but likely duplicate)
         # Game 2: Newer (attempted and imported)
         mock_get_games.return_value = [
-            {'end_time': 1672531200, 'pgn': 'old_game'}, # 2023-01-01 00:00:00 UTC
-            {'end_time': 1672617600, 'pgn': 'new_game'}  # 2023-01-02 00:00:00 UTC
+            {
+                'end_time': 1672531200, 
+                'pgn': '1. e4 e5', 
+                'white': {'username': 'erivera90'}, 
+                'black': {'username': 'opponent1'}
+            }, # 2023-01-01 00:00:00 UTC
+            {
+                'end_time': 1672617600, 
+                'pgn': '1. d4 d5', 
+                'white': {'username': 'erivera90'}, 
+                'black': {'username': 'opponent2'}
+            }  # 2023-01-02 00:00:00 UTC
         ]
         
         # First call (old_game) -> DUPLICATE
@@ -44,7 +55,7 @@ class TestSyncGames(unittest.TestCase):
 
         # Verify interactions
         mock_get_client.assert_called_once()
-        mock_get_date.assert_called_once()
+        mock_get_existing.assert_called_once()
         mock_get_archives.assert_called_once()
         mock_get_games.assert_called_once()
         
