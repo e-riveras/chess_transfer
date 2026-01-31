@@ -2,7 +2,8 @@ import os
 import logging
 import requests
 import berserk
-from datetime import datetime
+import time
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 
 # Configure logging
@@ -17,10 +18,6 @@ load_dotenv()
 
 CHESSCOM_USERNAME = os.getenv('CHESSCOM_USERNAME', 'erivera90')
 LICHESS_TOKEN = os.getenv('LICHESS_TOKEN')
-
-if not LICHESS_TOKEN:
-    logger.error("LICHESS_TOKEN environment variable is not set.")
-    exit(1)
 
 def get_lichess_client():
     session = berserk.TokenSession(LICHESS_TOKEN)
@@ -99,6 +96,10 @@ def import_game_to_lichess(client, pgn):
         return "ERROR"
 
 def main():
+    if not LICHESS_TOKEN:
+        logger.error("LICHESS_TOKEN environment variable is not set.")
+        exit(1)
+
     logger.info("Starting Chess.com to Lichess sync...")
     
     client = get_lichess_client()
@@ -116,9 +117,6 @@ def main():
     
     # We process archives in reverse order (newest first) to get recent games quicker
     archives.sort(reverse=True) 
-    
-    import time
-    from datetime import timezone
 
     for archive_url in archives:
         logger.info(f"Checking archive: {archive_url}")
