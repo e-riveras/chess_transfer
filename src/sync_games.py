@@ -86,16 +86,17 @@ def import_game_to_lichess(client, pgn):
         # Checking berserk docs (mental check): client.games.import_game(pgn)
         result = client.games.import_game(pgn)
         logger.info(f"Successfully imported game: {result.get('url')}")
-        return True
+        return "IMPORTED"
     except berserk.exceptions.ResponseError as e:
         if "Game already imported" in str(e):
              logger.info("Game already imported, skipping.")
+             return "DUPLICATE"
         else:
             logger.error(f"Failed to import game: {e}")
-        return False
+            return "ERROR"
     except Exception as e:
         logger.error(f"An unexpected error occurred during import: {e}")
-        return False
+        return "ERROR"
 
 def main():
     logger.info("Starting Chess.com to Lichess sync...")
@@ -158,21 +159,6 @@ def main():
             # Chess.com game 'end_time' is a unix timestamp (int)
             end_time = game.get('end_time')
             
-            if latest_lichess_date:
-                # latest_lichess_date is a datetime object (likely UTC)
-                
-                # Convert chess.com timestamp to datetime (UTC)
-                from datetime import timezone
-                game_date = datetime.fromtimestamp(end_time, tz=timezone.utc)
-                
-                # Ensure latest_lichess_date is also comparable.
-                # If berserk returns naive, assume UTC. If aware, normalize.
-                if latest_lichess_date.tzinfo is None:
-                     latest_lichess_date = latest_lichess_date.replace(tzinfo=timezone.utc)
-                
-                if game_date <= latest_lichess_date:
-                    continue
-            
             # If we are here, the game is newer or we have no history.
             # Add to list to import.
             # We might want to buffer them or import immediately. 
@@ -180,11 +166,18 @@ def main():
             
             pgn = game.get('pgn')
             if pgn:
-                logger.info(f"Found new game ended at {datetime.fromtimestamp(end_time)}. Importing...")
-                if import_game_to_lichess(client, pgn):
+                logger.info(f"Found game ended at {datetime.fromtimestamp(end_time)}. Attempting import...")
+                import_status = import_game_to_lichess(client, pgn)
+                if import_status == "IMPORTED":
                     # Respect rate limits - Lichess can be strict
                     time.sleep(6)
-                archive_has_new_games = True
+                    archive_has_new_games = True
+                elif import_status == "DUPLICATE":
+                    # No need to sleep long for duplicates, usually fast.
+                    pass
+                else:
+                    # Error occurred
+                    pass
         
         # If we went through a whole archive and found NO new games (and we have a cutoff),
         # and since we are iterating archives backwards (newest months first),
