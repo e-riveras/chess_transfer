@@ -25,5 +25,6 @@ jobs:
         env:
           LICHESS_TOKEN: ${{ secrets.LICHESS_TOKEN }}
           CHESSCOM_USERNAME: erivera90
+          LOG_LEVEL: DEBUG
         run: |
           python src/sync_games.py
