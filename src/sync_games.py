@@ -76,24 +76,38 @@ def get_games_from_archive(archive_url):
 
 def import_game_to_lichess(client, pgn):
     """Imports a PGN to Lichess."""
-    try:
-        # Using the import endpoint via berserk? 
-        # Berserk might not have a direct 'import_game' method in all versions, 
-        # but let's check standard usage or use raw request if needed.
-        # Checking berserk docs (mental check): client.games.import_game(pgn)
-        result = client.games.import_game(pgn)
-        logger.info(f"Successfully imported game: {result.get('url')}")
-        return "IMPORTED"
-    except berserk.exceptions.ResponseError as e:
-        if "Game already imported" in str(e):
-             logger.info("Game already imported, skipping.")
-             return "DUPLICATE"
-        else:
+    def attempt_import():
+        try:
+            result = client.games.import_game(pgn)
+            logger.info(f"Successfully imported game: {result.get('url')}")
+            return "IMPORTED"
+        except berserk.exceptions.ResponseError as e:
+            if "Game already imported" in str(e):
+                 logger.info("Game already imported, skipping.")
+                 return "DUPLICATE"
+            
+            # Check for Rate Limit (429)
+            # e.status_code might be available, or we check the message
+            if e.status_code == 429 or "Too Many Requests" in str(e):
+                return "RATE_LIMIT"
+            
             logger.error(f"Failed to import game: {e}")
             return "ERROR"
-    except Exception as e:
-        logger.error(f"An unexpected error occurred during import: {e}")
-        return "ERROR"
+        except Exception as e:
+            logger.error(f"An unexpected error occurred during import: {e}")
+            return "ERROR"
+
+    status = attempt_import()
+    
+    if status == "RATE_LIMIT":
+        logger.warning("Rate limit reached (429). Sleeping for 60 seconds before retrying...")
+        time.sleep(60)
+        status = attempt_import()
+        if status == "RATE_LIMIT":
+            logger.error("Rate limit hit again after retry. Skipping this game.")
+            return "ERROR"
+            
+    return status
 
 def main():
     if not LICHESS_TOKEN:
@@ -149,7 +163,7 @@ def main():
         games = get_games_from_archive(archive_url)
         
         # Archives contain games in chronological order usually. 
-        # We want to process them.
+        # We process them.
         
         archive_has_new_games = False
         
@@ -159,8 +173,6 @@ def main():
             
             # If we are here, the game is newer or we have no history.
             # Add to list to import.
-            # We might want to buffer them or import immediately. 
-            # Importing immediately is safer against crashes.
             
             pgn = game.get('pgn')
             if pgn:
@@ -168,14 +180,15 @@ def main():
                 import_status = import_game_to_lichess(client, pgn)
                 if import_status == "IMPORTED":
                     # Respect rate limits - Lichess can be strict
+                    # If we just imported, sleep significantly
                     time.sleep(6)
                     archive_has_new_games = True
                 elif import_status == "DUPLICATE":
-                    # No need to sleep long for duplicates, usually fast.
-                    pass
+                    # No need to sleep long for duplicates, but be polite to avoid 429 on check
+                    time.sleep(1)
                 else:
                     # Error occurred
-                    pass
+                    time.sleep(1)
         
         # If we went through a whole archive and found NO new games (and we have a cutoff),
         # and since we are iterating archives backwards (newest months first),

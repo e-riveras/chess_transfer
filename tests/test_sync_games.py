@@ -51,8 +51,71 @@ class TestSyncGames(unittest.TestCase):
         # Should attempt to import BOTH games
         self.assertEqual(mock_import.call_count, 2)
         
-        # Should sleep ONLY once (for the IMPORTED game)
-        mock_sleep.assert_called_once_with(6)
+        # Should sleep:
+        # 1. sleep(1) for the DUPLICATE result
+        # 2. sleep(6) for the IMPORTED result
+        # Check calls in any order or specific order.
+        from unittest.mock import call
+        mock_sleep.assert_has_calls([call(1), call(6)], any_order=True)
+
+    def test_import_game_to_lichess_rate_limit(self):
+        mock_client = MagicMock()
+        
+        # Define a mock exception for 429 using subclass to avoid init issues
+        class MockResponseError(berserk.exceptions.ResponseError):
+            def __init__(self):
+                pass
+            @property
+            def status_code(self):
+                return 429
+            def __str__(self):
+                return "Too Many Requests"
+        
+        mock_429 = MockResponseError()
+        
+        # Side effect: First call raises 429, Second call succeeds
+        mock_client.games.import_game.side_effect = [
+            mock_429,
+            {'url': 'http://lichess.org/retry_success'}
+        ]
+        
+        with patch('src.sync_games.time.sleep') as mock_sleep:
+            status = import_game_to_lichess(mock_client, 'pgn_data')
+            
+            # Should return IMPORTED after retry
+            self.assertEqual(status, "IMPORTED")
+            
+            # Should have slept for 60 seconds
+            mock_sleep.assert_called_with(60)
+            
+            # Should have called import_game twice
+            self.assertEqual(mock_client.games.import_game.call_count, 2)
+
+    def test_import_game_to_lichess_rate_limit_fail(self):
+        mock_client = MagicMock()
+        
+        class MockResponseError(berserk.exceptions.ResponseError):
+            def __init__(self):
+                pass
+            @property
+            def status_code(self):
+                return 429
+            def __str__(self):
+                return "Too Many Requests"
+
+        mock_429 = MockResponseError()
+        
+        # Side effect: Always raises 429
+        mock_client.games.import_game.side_effect = mock_429
+        
+        with patch('src.sync_games.time.sleep') as mock_sleep:
+            status = import_game_to_lichess(mock_client, 'pgn_data')
+            
+            # Should return ERROR after retry fails
+            self.assertEqual(status, "ERROR")
+             # Should have slept for 60 seconds
+            mock_sleep.assert_called_with(60)
+            self.assertEqual(mock_client.games.import_game.call_count, 2)
 
     @patch('src.sync_games.berserk.Client')
     @patch('src.sync_games.berserk.TokenSession')
