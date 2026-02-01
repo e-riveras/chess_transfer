@@ -156,7 +156,7 @@ def get_existing_lichess_games(client, limit=500):
             
             sig = (white, black, moves_sig)
             signatures.add(sig)
-            # logger.debug(f"Added Lichess Signature: {sig}")
+            logger.debug(f"Added Lichess Signature: {sig}")
             
         logger.info(f"Successfully processed {count} games from Lichess.")
             
