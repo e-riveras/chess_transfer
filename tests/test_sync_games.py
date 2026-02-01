@@ -105,13 +105,13 @@ class TestSyncGames(unittest.TestCase):
         with patch("builtins.open", mock_open(read_data='{"imported_ids": ["123"]}')):
             with patch("os.path.exists", return_value=True):
                 history = load_history()
-                self.assertEqual(history, {"imported_ids": ["123"]})
+                self.assertEqual(history, {"imported_ids": ["123"], "monthly_studies": {}})
 
     @patch('src.sync_games.HISTORY_FILE', 'data/history.json')
     def test_load_history_not_exists(self):
         with patch("os.path.exists", return_value=False):
             history = load_history()
-            self.assertEqual(history, {"imported_ids": []})
+            self.assertEqual(history, {"imported_ids": [], "monthly_studies": {}})
 
     @patch('src.sync_games.HISTORY_FILE', 'data/history.json')
     def test_save_history(self):
@@ -123,6 +123,7 @@ class TestSyncGames(unittest.TestCase):
             # Verify json dump wrote something resembling the json
             # handle.write.assert_called() # tough to verify exact string with json.dump formatting
 
+    @patch('src.sync_games.StudyManager')
     @patch('src.sync_games.time.sleep')
     @patch('src.sync_games.import_game_to_lichess')
     @patch('src.sync_games.get_games_from_archive')
@@ -131,28 +132,37 @@ class TestSyncGames(unittest.TestCase):
     @patch('src.sync_games.save_history')
     @patch('src.sync_games.get_lichess_client')
     @patch('src.sync_games.LICHESS_TOKEN', 'fake_token')
-    def test_main_sync_flow(self, mock_get_client, mock_save_hist, mock_load_hist, mock_get_archives, mock_get_games, mock_import, mock_sleep):
+    def test_main_sync_flow(self, mock_get_client, mock_save_hist, mock_load_hist, mock_get_archives, mock_get_games, mock_import, mock_sleep, mock_study_manager_cls):
         # Setup mocks
-        mock_load_hist.return_value = {"imported_ids": ["old_game_id"]}
+        mock_load_hist.return_value = {"imported_ids": ["old_game_id"], "monthly_studies": {}}
         
         mock_get_archives.return_value = ['archive_url']
         
         # Game 1: ID is "old_game_id" (should skip)
         # Game 2: ID is "new_game_id" (should import)
+        # Game 2: Rapid, >20 moves (PGN has "20.") -> Should trigger study
         mock_get_games.return_value = [
             {
                 'url': 'https://chess.com/game/live/old_game_id',
                 'end_time': 1000, 
-                'pgn': 'pgn1'
+                'pgn': 'pgn1',
+                'time_class': 'blitz'
             },
             {
                 'url': 'https://chess.com/game/live/new_game_id',
-                'end_time': 2000, 
-                'pgn': 'pgn2'
+                'end_time': 1738368000, # Some date in 2025
+                'pgn': '1. e4 e5 ... 20. h3',
+                'time_class': 'rapid',
+                'white': {'username': 'me'},
+                'black': {'username': 'you'}
             }
         ]
         
         mock_import.return_value = "IMPORTED"
+        
+        # Mock StudyManager instance
+        mock_study_manager = mock_study_manager_cls.return_value
+        mock_study_manager.create_study.return_value = "study_id_123"
 
         main()
 
@@ -161,9 +171,12 @@ class TestSyncGames(unittest.TestCase):
         
         # Should attempt to import ONLY the new game
         mock_import.assert_called_once()
-        # Verify call args: client and pgn2
         args, _ = mock_import.call_args
-        self.assertEqual(args[1], 'pgn2')
+        self.assertEqual(args[1], '1. e4 e5 ... 20. h3')
+        
+        # Should create study since it's missing in history
+        mock_study_manager.create_study.assert_called_once()
+        mock_study_manager.add_game_to_study.assert_called_once()
         
         # Should save history
         mock_save_hist.assert_called()

@@ -24,6 +24,65 @@ LICHESS_TOKEN = os.getenv('LICHESS_TOKEN')
 HISTORY_FILE = os.path.join(os.path.dirname(__file__), '../data/history.json')
 MAX_IMPORTS_PER_RUN = 50
 
+class StudyManager:
+    def __init__(self, token):
+        self.token = token
+        self.headers = {'Authorization': f'Bearer {token}'}
+        self.base_url = "https://lichess.org/api"
+        self.studies_cache = {} # Map "Name" -> "ID"
+
+    def get_or_create_study(self, study_name):
+        """Finds a study by name (cached) or creates it."""
+        if study_name in self.studies_cache:
+            return self.studies_cache[study_name]
+
+        # 1. Search existing studies (List user studies)
+        # Note: Listing all studies might be heavy. We can cache locally in history.json too?
+        # For now, let's try to fetch user studies.
+        # Endpoint: /api/study/by/{username}
+        try:
+            # We assume the user is the token owner.
+            # We need username. We can fetch account info or pass it.
+            # Let's verify if we can list studies easily.
+            # Paging might be an issue.
+            pass
+        except Exception:
+            pass
+        
+        # Simplified approach: We maintain study IDs in our local history file 
+        # to avoid searching API every time.
+        # But for now, let's just Try to Create. If it exists, Lichess might return it?
+        # No, creating duplicates creates a new study.
+        
+        # We MUST persist Study IDs in history.json or we will create a new study every run.
+        return None
+
+    def create_study(self, name):
+        url = f"{self.base_url}/study"
+        data = {'name': name, 'visibility': 'public'} # or private
+        resp = requests.post(url, headers=self.headers, data=data)
+        if resp.status_code == 200:
+            study = resp.json()
+            return study['id']
+        else:
+            logger.error(f"Failed to create study {name}: {resp.text}")
+            return None
+
+    def add_game_to_study(self, study_id, pgn, chapter_name):
+        url = f"{self.base_url}/study/{study_id}/import-pgn"
+        data = {'pgn': pgn, 'name': chapter_name}
+        resp = requests.post(url, headers=self.headers, data=data)
+        if resp.status_code == 200:
+            logger.info(f"Added game to study {study_id}")
+            return True
+        elif resp.status_code == 429:
+            logger.warning("Rate limit on study write.")
+            time.sleep(60)
+            return False
+        else:
+            logger.error(f"Failed to add to study: {resp.text}")
+            return False
+
 def get_lichess_client():
     session = berserk.TokenSession(LICHESS_TOKEN)
     return berserk.Client(session=session)
@@ -92,18 +151,24 @@ def import_game_to_lichess(client, pgn):
 def load_history():
     """Loads the history of imported games from a JSON file."""
     if not os.path.exists(HISTORY_FILE):
-        return {"imported_ids": []}
+        return {"imported_ids": [], "monthly_studies": {}}
     try:
         with open(HISTORY_FILE, 'r') as f:
-            return json.load(f)
+            data = json.load(f)
+            if "monthly_studies" not in data:
+                data["monthly_studies"] = {}
+            return data
     except json.JSONDecodeError:
         logger.error("Failed to decode history file. Starting with empty history.")
-        return {"imported_ids": []}
+        return {"imported_ids": [], "monthly_studies": {}}
 
 def save_history(history):
     """Saves the history of imported games to a JSON file."""
     try:
         os.makedirs(os.path.dirname(HISTORY_FILE), exist_ok=True)
+        # Convert set to list for JSON serialization if needed
+        # But we maintain imported_ids as list in dict, cast to set in memory
+        # We will handle the casting in main.
         with open(HISTORY_FILE, 'w') as f:
             json.dump(history, f, indent=2)
     except Exception as e:
@@ -117,6 +182,7 @@ def main():
     logger.info("Starting Chess.com to Lichess sync...")
     
     client = get_lichess_client()
+    study_manager = StudyManager(LICHESS_TOKEN)
 
     # 1. Load local history
     history = load_history()
@@ -133,15 +199,11 @@ def main():
         logger.info(f"Checking archive: {archive_url}")
         games = get_games_from_archive(archive_url)
         
-        # Optimization: If all games in an archive are already imported, we can stop checking older archives?
-        # Only if we assume chronological order and continuous history.
-        # For now, let's process archives. We can break if we find a very old game that is already imported
-        # AND we have a robust history. But be careful.
-        
         for game in games:
             url = game.get('url') # e.g. https://www.chess.com/game/live/147465533948
             end_time = game.get('end_time')
             pgn = game.get('pgn')
+            time_class = game.get('time_class')
             
             if not url or not pgn:
                 continue
@@ -162,6 +224,28 @@ def main():
                 imported_ids.add(game_id)
                 history["imported_ids"] = list(imported_ids)
                 new_imports_count += 1
+                
+                # --- STUDY LOGIC ---
+                # Check for Rapid (>10min usually) and >20 moves
+                # Chess.com time_class is 'rapid'
+                # Move count: PGN usually has "20." if it reached move 20.
+                if time_class == 'rapid' and "20." in pgn:
+                    game_dt = datetime.fromtimestamp(end_time, tz=timezone.utc)
+                    month_name = game_dt.strftime("%B %Y") # e.g. "January 2026"
+                    study_name = f"Chess.com Rapid - {month_name}"
+                    
+                    # Get or Create Study ID
+                    study_id = history["monthly_studies"].get(study_name)
+                    if not study_id:
+                        logger.info(f"Creating new study: {study_name}")
+                        study_id = study_manager.create_study(study_name)
+                        if study_id:
+                            history["monthly_studies"][study_name] = study_id
+                    
+                    if study_id:
+                        chapter_name = f"{game['white']['username']} vs {game['black']['username']}"
+                        study_manager.add_game_to_study(study_id, pgn, chapter_name)
+                # -------------------
                 
                 # Check limit
                 if new_imports_count >= MAX_IMPORTS_PER_RUN:
