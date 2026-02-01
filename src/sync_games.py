@@ -111,7 +111,7 @@ def import_game_to_lichess(client, pgn):
             
     return status
 
-def get_existing_lichess_games(client, limit=100):
+def get_existing_lichess_games(client, limit=500):
     """
     Fetches recent games from Lichess and returns a set of signatures to identify duplicates.
     Signature: (white_username, black_username, moves_start) 
@@ -123,12 +123,16 @@ def get_existing_lichess_games(client, limit=100):
         username = account['username']
         
         # Fetch games with opening info to get moves or sufficient detail
+        logger.info(f"Requesting up to {limit} games from Lichess for user {username}...")
         games = client.games.export_by_player(username, max=limit, sort='dateDesc', opening=True, moves=True)
         
+        count = 0
         for i, game in enumerate(games):
+            count += 1
             # Capture latest date from the first game
             if i == 0:
                 latest_date = game['createdAt']
+                logger.debug(f"First Lichess game sample: {game}")
 
             # Lichess players dict
             white = game['players']['white']['user']['name'].lower() if 'user' in game['players']['white'] else 'ai'
@@ -141,7 +145,11 @@ def get_existing_lichess_games(client, limit=100):
             # use first 50 chars of moves as signature component
             moves_sig = moves_clean[:50]
             
-            signatures.add((white, black, moves_sig))
+            sig = (white, black, moves_sig)
+            signatures.add(sig)
+            # logger.debug(f"Added Lichess Signature: {sig}")
+            
+        logger.info(f"Successfully processed {count} games from Lichess.")
             
     except Exception as e:
         logger.error(f"Error fetching existing Lichess games: {e}")
