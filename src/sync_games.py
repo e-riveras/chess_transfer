@@ -134,9 +134,18 @@ def get_existing_lichess_games(client, limit=500):
                 latest_date = game['createdAt']
                 logger.debug(f"First Lichess game sample: {game}")
 
-            # Lichess players dict
-            white = game['players']['white']['user']['name'].lower() if 'user' in game['players']['white'] else 'ai'
-            black = game['players']['black']['user']['name'].lower() if 'user' in game['players']['black'] else 'ai'
+            # Lichess players dict extraction
+            # Native games have ['user']['name']
+            # Imported games might have just ['name'] if the player isn't on Lichess
+            def get_player_name(player_dict):
+                if 'user' in player_dict:
+                    return player_dict['user']['name'].lower()
+                elif 'name' in player_dict:
+                    return player_dict['name'].lower()
+                return 'ai'
+
+            white = get_player_name(game['players']['white'])
+            black = get_player_name(game['players']['black'])
             
             # Moves: string "e4 e5 ..."
             moves = game.get('moves', '')
