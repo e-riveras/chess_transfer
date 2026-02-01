@@ -22,6 +22,7 @@ load_dotenv()
 CHESSCOM_USERNAME = os.getenv('CHESSCOM_USERNAME', 'erivera90')
 LICHESS_TOKEN = os.getenv('LICHESS_TOKEN')
 HISTORY_FILE = os.path.join(os.path.dirname(__file__), '../data/history.json')
+MAX_IMPORTS_PER_RUN = 50
 
 def get_lichess_client():
     session = berserk.TokenSession(LICHESS_TOKEN)
@@ -162,6 +163,12 @@ def main():
                 history["imported_ids"] = list(imported_ids)
                 new_imports_count += 1
                 
+                # Check limit
+                if new_imports_count >= MAX_IMPORTS_PER_RUN:
+                    logger.info(f"Reached limit of {MAX_IMPORTS_PER_RUN} imports for this run. Saving and stopping.")
+                    save_history(history)
+                    return
+
                 # Save periodically or just keep in memory?
                 # Safer to save periodically in case of crash, but strictly only need once at end.
                 # Let's save every 5 imports to be safe.
