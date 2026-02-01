@@ -11,6 +11,8 @@ on:
 jobs:
   sync:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -31,3 +33,12 @@ jobs:
           LOG_LEVEL: DEBUG
         run: |
           python src/sync_games.py
+
+      - name: Commit and Push History
+        if: success()
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add data/history.json
+          git commit -m "Update import history" || echo "No changes to history"
+          git push
