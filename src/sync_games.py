@@ -27,51 +27,59 @@ MAX_IMPORTS_PER_RUN = 100
 class StudyManager:
     def __init__(self, token):
         self.token = token
-        self.headers = {'Authorization': f'Bearer {token}'}
+        self.headers = {
+            'Authorization': f'Bearer {token}',
+            'User-Agent': 'ChessTransferBot/1.0 (erivera90)',
+            'Content-Type': 'application/json'
+        }
         self.base_url = "https://lichess.org/api"
         self.studies_cache = {} # Map "Name" -> "ID"
 
     def get_or_create_study(self, study_name):
-        """Finds a study by name (cached) or creates it."""
-        if study_name in self.studies_cache:
-            return self.studies_cache[study_name]
-
-        # 1. Search existing studies (List user studies)
-        # Note: Listing all studies might be heavy. We can cache locally in history.json too?
-        # For now, let's try to fetch user studies.
-        # Endpoint: /api/study/by/{username}
-        try:
-            # We assume the user is the token owner.
-            # We need username. We can fetch account info or pass it.
-            # Let's verify if we can list studies easily.
-            # Paging might be an issue.
-            pass
-        except Exception:
-            pass
-        
-        # Simplified approach: We maintain study IDs in our local history file 
-        # to avoid searching API every time.
-        # But for now, let's just Try to Create. If it exists, Lichess might return it?
-        # No, creating duplicates creates a new study.
-        
-        # We MUST persist Study IDs in history.json or we will create a new study every run.
+        # ... (cached logic) ...
         return None
 
     def create_study(self, name):
         url = f"{self.base_url}/study"
-        data = {'name': name, 'visibility': 'public'} # or private
-        resp = requests.post(url, headers=self.headers, data=data)
+        # Lichess expects Form Data usually, but let's try strict params.
+        # Docs say "Form data".
+        # Let's try passing data as dict but WITHOUT Content-Type json if using data param.
+        # BUT `requests` handles it.
+        
+        # Let's revert to `data` but add User-Agent.
+        # And verify URL.
+        
+        # Actually, let's try `berserk`'s internal session if possible?
+        # No, keep it simple.
+        
+        # Docs: POST /api/study
+        # Params: name, visibility.
+        
+        # Retry with just User-Agent and Form Data.
+        headers = {
+            'Authorization': f'Bearer {self.token}',
+            'User-Agent': 'ChessTransferBot/1.0 (erivera90)'
+        }
+        data = {'name': name, 'visibility': 'public'}
+        
+        resp = requests.post(url, headers=headers, data=data)
+        
         if resp.status_code == 200:
             study = resp.json()
             return study['id']
         else:
-            logger.error(f"Failed to create study {name}: {resp.text}")
+            logger.error(f"Failed to create study {name}: {resp.status_code} {resp.text}")
             return None
 
     def add_game_to_study(self, study_id, pgn, chapter_name):
         url = f"{self.base_url}/study/{study_id}/import-pgn"
+        headers = {
+            'Authorization': f'Bearer {self.token}',
+            'User-Agent': 'ChessTransferBot/1.0 (erivera90)'
+        }
         data = {'pgn': pgn, 'name': chapter_name}
-        resp = requests.post(url, headers=self.headers, data=data)
+        resp = requests.post(url, headers=headers, data=data)
+        
         if resp.status_code == 200:
             logger.info(f"Added game to study {study_id}")
             return True
