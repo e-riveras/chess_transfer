@@ -25,13 +25,8 @@ HISTORY_FILE = os.path.join(os.path.dirname(__file__), '../data/history.json')
 MAX_IMPORTS_PER_RUN = 100
 
 class StudyManager:
-    def __init__(self, token):
-        self.token = token
-        self.headers = {
-            'Authorization': f'Bearer {token}',
-            'User-Agent': 'ChessTransferBot/1.0 (erivera90)'
-        }
-        self.base_url = "https://lichess.org/api"
+    def __init__(self, client):
+        self.client = client
         self.studies_cache = {} # Map "Name" -> "ID"
 
     def get_or_create_study(self, study_name):
@@ -39,55 +34,30 @@ class StudyManager:
         return None
 
     def create_study(self, name):
-        url = f"{self.base_url}/study"
-        # Lichess expects Form Data usually, but let's try strict params.
-        # Docs say "Form data".
-        # Let's try passing data as dict but WITHOUT Content-Type json if using data param.
-        # BUT `requests` handles it.
-        
-        # Let's revert to `data` but add User-Agent.
-        # And verify URL.
-        
-        # Actually, let's try `berserk`'s internal session if possible?
-        # No, keep it simple.
-        
-        # Docs: POST /api/study
-        # Params: name, visibility.
-        
-        # Retry with just User-Agent and Form Data.
-        headers = {
-            'Authorization': f'Bearer {self.token}',
-            'User-Agent': 'ChessTransferBot/1.0 (erivera90)'
-        }
-        data = {'name': name, 'visibility': 'public'}
-        
-        resp = requests.post(url, headers=headers, data=data)
-        
-        if resp.status_code == 200:
-            study = resp.json()
+        try:
+            # berserk 0.14+ supports studies
+            # visibility: 'public', 'private', 'unlisted'
+            study = self.client.studies.create(name=name, visibility='public')
             return study['id']
-        else:
-            logger.error(f"Failed to create study {name}: {resp.status_code} {resp.text}")
+        except berserk.exceptions.ResponseError as e:
+            logger.error(f"Failed to create study {name}: {e}")
+            return None
+        except AttributeError:
+            logger.error("Berserk client does not support studies (update library?).")
             return None
 
     def add_game_to_study(self, study_id, pgn, chapter_name):
-        url = f"{self.base_url}/study/{study_id}/import-pgn"
-        headers = {
-            'Authorization': f'Bearer {self.token}',
-            'User-Agent': 'ChessTransferBot/1.0 (erivera90)'
-        }
-        data = {'pgn': pgn, 'name': chapter_name}
-        resp = requests.post(url, headers=headers, data=data)
-        
-        if resp.status_code == 200:
+        try:
+            # import_pgn(study_id, pgn, name=None)
+            self.client.studies.import_pgn(study_id, pgn, name=chapter_name)
             logger.info(f"Added game to study {study_id}")
             return True
-        elif resp.status_code == 429:
-            logger.warning("Rate limit on study write.")
-            time.sleep(60)
-            return False
-        else:
-            logger.error(f"Failed to add to study: {resp.text}")
+        except berserk.exceptions.ResponseError as e:
+            if e.status_code == 429:
+                logger.warning("Rate limit on study write.")
+                time.sleep(60)
+                return False
+            logger.error(f"Failed to add to study: {e}")
             return False
 
 def get_lichess_client():
@@ -191,7 +161,7 @@ def main():
     logger.info("Starting Chess.com to Lichess sync...")
     
     client = get_lichess_client()
-    study_manager = StudyManager(LICHESS_TOKEN)
+    study_manager = StudyManager(client)
 
     # 1. Load local history
     history = load_history()
