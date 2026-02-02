@@ -20,6 +20,21 @@ This project automatically syncs your games played on [Chess.com](https://www.ch
 4.  **Configure Username:**
     -   The script defaults to `erivera90`. You can change this in `.github/workflows/sync.yml` by updating the `CHESSCOM_USERNAME` environment variable.
 
+## Monthly Studies (Rapid Games)
+
+The tool attempts to organize your **Rapid games** (that last more than 20 moves) into monthly Lichess Studies for analysis.
+
+**Important:** Due to Lichess API limitations, the tool **cannot create studies automatically**. You must manually create them once a month.
+
+1.  Go to [Lichess Studies](https://lichess.org/study).
+2.  Create a new Public (or Private) Study.
+3.  Name it exactly: **`Rapid Games - [Month] [Year]`**
+    *   Example: `Rapid Games - February 2026`
+    *   Example: `Rapid Games - March 2026`
+4.  The script will automatically find this study and add your new games to it.
+
+If you forget to create the study, the script will simply skip the "Add to Study" step for those games (but will still import them to your profile). Once you create the study, it will "backfill" the missing games on the next run.
+
 ## Local Development
 
 1.  Clone the repo.
