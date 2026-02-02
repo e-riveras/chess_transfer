@@ -22,7 +22,7 @@ load_dotenv()
 CHESSCOM_USERNAME = os.getenv('CHESSCOM_USERNAME', 'erivera90')
 LICHESS_TOKEN = os.getenv('LICHESS_TOKEN')
 HISTORY_FILE = os.path.join(os.path.dirname(__file__), '../data/history.json')
-MAX_IMPORTS_PER_RUN = 50
+MAX_IMPORTS_PER_RUN = 100
 
 class StudyManager:
     def __init__(self, token):
@@ -201,6 +201,8 @@ def main():
     for archive_url in archives:
         logger.info(f"Checking archive: {archive_url}")
         games = get_games_from_archive(archive_url)
+        # Reverse games to process newest first within the month
+        games.reverse()
         
         for game in games:
             url = game.get('url') 
@@ -231,9 +233,12 @@ def main():
             
             # --- STEP 2: STUDY ---
             # Check eligibility: Rapid and >20 moves
-            if time_class == 'rapid' and "20." in pgn:
+            is_rapid = (time_class == 'rapid')
+            has_moves = ("20." in pgn)
+            
+            if is_rapid and has_moves:
                 if game_id not in studied_ids:
-                    # Proceed to add to study
+                    logger.info(f"Game {game_id} qualifies for study. Adding...")
                     game_dt = datetime.fromtimestamp(end_time, tz=timezone.utc)
                     month_name = game_dt.strftime("%B %Y")
                     study_name = f"Chess.com Rapid - {month_name}"
@@ -244,18 +249,24 @@ def main():
                         study_id = study_manager.create_study(study_name)
                         if study_id:
                             history["monthly_studies"][study_name] = study_id
+                            # Save immediately when a new study ID is acquired
+                            save_history(history)
                     
                     if study_id:
                         chapter_name = f"{game['white']['username']} vs {game['black']['username']}"
                         if study_manager.add_game_to_study(study_id, pgn, chapter_name):
                             studied_ids.add(game_id)
                             actions_count += 1
-                            # Adding to study also consumes rate limit, be polite
                             time.sleep(2) 
+                else:
+                    logger.debug(f"Game {game_id} already in studied_ids.")
+            else:
+                if is_rapid: # Rapid but < 20 moves
+                    logger.debug(f"Game {game_id} skipped: too short ({len(pgn)} chars).")
             
             # Update history object in memory
-            history["imported_ids"] = list(imported_ids)
-            history["studied_ids"] = list(studied_ids)
+            history["imported_ids"] = sorted(list(imported_ids))
+            history["studied_ids"] = sorted(list(studied_ids))
 
             # Check limit
             if actions_count >= MAX_IMPORTS_PER_RUN:

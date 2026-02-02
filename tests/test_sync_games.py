@@ -139,6 +139,7 @@ class TestSyncGames(unittest.TestCase):
         # Game 1: ID is "old_game_id" (should skip import, but might check study)
         # Game 2: ID is "new_game_id" (should import)
         # Game 2: Rapid, >20 moves (PGN has "20.") -> Should trigger study
+        # Note: main() reverses the list, so it will process Game 2 first.
         mock_get_games.return_value = [
             {
                 'url': 'https://chess.com/game/live/old_game_id',
@@ -168,7 +169,7 @@ class TestSyncGames(unittest.TestCase):
         # Verify interactions
         mock_load_hist.assert_called_once()
         
-        # Should attempt to import ONLY the new game
+        # Should attempt to import ONLY the new game (new_game_id)
         mock_import.assert_called_once()
         args, _ = mock_import.call_args
         self.assertEqual(args[1], '1. e4 e5 ... 20. h3')
