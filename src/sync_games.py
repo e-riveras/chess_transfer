@@ -35,7 +35,8 @@ class StudyManager:
     def create_study(self, name):
         url = f"{self.base_url}/study"
         # Use form data (data=) as per docs, not JSON
-        payload = {'name': name, 'visibility': 'public'}
+        # Try 'private' visibility to match working test script
+        payload = {'name': name, 'visibility': 'private'}
         
         # 1. Try standard URL
         try:
