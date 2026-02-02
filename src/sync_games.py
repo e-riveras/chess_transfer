@@ -36,14 +36,24 @@ class StudyManager:
 
     def create_study(self, name):
         url = f"{self.base_url}/study"
+        # Use form data (data=) as per docs, not JSON
         payload = {'name': name, 'visibility': 'public'}
+        
+        # 1. Try standard URL
         try:
-            resp = requests.post(url, headers=self.headers, json=payload)
+            resp = requests.post(url, headers=self.headers, data=payload)
             if resp.status_code == 200:
                 return resp.json()['id']
-            else:
-                logger.error(f"Failed to create study {name}: {resp.status_code} {resp.text}")
-                return None
+            
+            # 2. If 404, try trailing slash?
+            if resp.status_code == 404:
+                logger.warning("Got 404 on /api/study, retrying with trailing slash...")
+                resp = requests.post(url + "/", headers=self.headers, data=payload)
+                if resp.status_code == 200:
+                    return resp.json()['id']
+            
+            logger.error(f"Failed to create study {name}: {resp.status_code} {resp.text}")
+            return None
         except Exception as e:
             logger.error(f"Request error creating study: {e}")
             return None
