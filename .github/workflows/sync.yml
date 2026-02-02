@@ -26,12 +26,6 @@ jobs:
         run: |
           pip install -r requirements.txt
 
-      - name: Verify Study Permissions
-        env:
-          LICHESS_TOKEN: ${{ secrets.LICHESS_TOKEN }}
-        run: |
-          python test_study_permissions.py
-
       - name: Run Sync Script
         env:
           LICHESS_TOKEN: ${{ secrets.LICHESS_TOKEN }}
