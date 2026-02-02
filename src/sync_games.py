@@ -32,43 +32,35 @@ class StudyManager:
         }
         self.base_url = "https://lichess.org/api"
 
-    def create_study(self, name):
-        url = f"{self.base_url}/study"
-        
-        # DEBUG: Mask token check
-        if self.token:
-            logger.info(f"Token present (starts with {self.token[:4]}...)")
-        else:
-            logger.error("Token is MISSING in StudyManager!")
-
-        # DEBUG: Force simple name to rule out filter
-        test_name = "Test Study Debug"
-        payload = {'name': test_name, 'visibility': 'private'}
-        
-        # 1. Try standard URL
+    def find_study_by_name(self, username, study_name):
+        """
+        Fetches user's studies and returns the ID of the one matching study_name.
+        Lichess API returns NDJSON (newline delimited JSON).
+        """
+        url = f"{self.base_url}/study/by/{username}"
         try:
-            resp = requests.post(url, headers=self.headers, data=payload)
+            resp = requests.get(url, headers=self.headers)
             if resp.status_code == 200:
-                return resp.json()['id']
-            
-            # 2. If 404, try trailing slash?
-            if resp.status_code == 404:
-                logger.warning("Got 404 on /api/study, retrying with trailing slash...")
-                resp = requests.post(url + "/", headers=self.headers, data=payload)
-                if resp.status_code == 200:
-                    return resp.json()['id']
-            
-            logger.error(f"Failed to create study {name}: {resp.status_code} {resp.text}")
-            return None
+                # Parse NDJSON
+                for line in resp.iter_lines():
+                    if line:
+                        try:
+                            study = json.loads(line)
+                            if study.get('name') == study_name:
+                                return study['id']
+                        except json.JSONDecodeError:
+                            continue
+            else:
+                logger.error(f"Failed to list studies: {resp.status_code} {resp.text}")
         except Exception as e:
-            logger.error(f"Request error creating study: {e}")
-            return None
+            logger.error(f"Request error listing studies: {e}")
+        return None
 
     def add_game_to_study(self, study_id, pgn, chapter_name):
         url = f"{self.base_url}/study/{study_id}/import-pgn"
         payload = {'pgn': pgn, 'name': chapter_name}
         try:
-            resp = requests.post(url, headers=self.headers, json=payload)
+            resp = requests.post(url, headers=self.headers, data=payload)
             if resp.status_code == 200:
                 logger.info(f"Added game to study {study_id}")
                 return True
@@ -246,12 +238,17 @@ def main():
                     
                     study_id = history["monthly_studies"].get(study_name)
                     if not study_id:
-                        logger.info(f"Creating new study: {study_name}")
-                        study_id = study_manager.create_study(study_name)
+                        # Try to find existing study on Lichess
+                        study_id = study_manager.find_study_by_name(CHESSCOM_USERNAME, study_name)
                         if study_id:
+                            logger.info(f"Found existing study: {study_name} ({study_id})")
                             history["monthly_studies"][study_name] = study_id
-                            # Save immediately when a new study ID is acquired
                             save_history(history)
+                        else:
+                            # Log warning only once per run/study to avoid spam
+                            # We can check if we already warned for this study?
+                            # For now, just log.
+                            logger.warning(f"Study '{study_name}' not found. Please create it manually on Lichess to enable auto-import.")
                     
                     if study_id:
                         chapter_name = f"{game['white']['username']} vs {game['black']['username']}"

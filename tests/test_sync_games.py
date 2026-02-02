@@ -161,7 +161,7 @@ class TestSyncGames(unittest.TestCase):
         
         # Mock StudyManager instance
         mock_study_manager = mock_study_manager_cls.return_value
-        mock_study_manager.create_study.return_value = "study_id_123"
+        mock_study_manager.find_study_by_name.return_value = "study_id_123"
         mock_study_manager.add_game_to_study.return_value = True
 
         main()
@@ -169,13 +169,13 @@ class TestSyncGames(unittest.TestCase):
         # Verify interactions
         mock_load_hist.assert_called_once()
         
-        # Should attempt to import ONLY the new game (new_game_id)
+        # Should attempt to import ONLY the new game
         mock_import.assert_called_once()
         args, _ = mock_import.call_args
         self.assertEqual(args[1], '1. e4 e5 ... 20. h3')
         
-        # Should create study since it's missing in history
-        mock_study_manager.create_study.assert_called_once()
+        # Should search for study
+        mock_study_manager.find_study_by_name.assert_called_once()
         mock_study_manager.add_game_to_study.assert_called_once()
         
         # Should save history
