@@ -234,7 +234,8 @@ def main():
                     logger.info(f"Game {game_id} qualifies for study. Adding...")
                     game_dt = datetime.fromtimestamp(end_time, tz=timezone.utc)
                     month_name = game_dt.strftime("%B %Y")
-                    study_name = f"Chess.com Rapid - {month_name}"
+                    # Avoid using "Chess.com" in title in case of filters
+                    study_name = f"Rapid Games - {month_name}"
                     
                     study_id = history["monthly_studies"].get(study_name)
                     if not study_id:
