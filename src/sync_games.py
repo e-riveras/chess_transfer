@@ -34,9 +34,16 @@ class StudyManager:
 
     def create_study(self, name):
         url = f"{self.base_url}/study"
-        # Use form data (data=) as per docs, not JSON
-        # Try 'private' visibility to match working test script
-        payload = {'name': name, 'visibility': 'private'}
+        
+        # DEBUG: Mask token check
+        if self.token:
+            logger.info(f"Token present (starts with {self.token[:4]}...)")
+        else:
+            logger.error("Token is MISSING in StudyManager!")
+
+        # DEBUG: Force simple name to rule out filter
+        test_name = "Test Study Debug"
+        payload = {'name': test_name, 'visibility': 'private'}
         
         # 1. Try standard URL
         try:
