@@ -28,8 +28,7 @@ class StudyManager:
     def __init__(self, token):
         self.token = token
         self.headers = {
-            'Authorization': f'Bearer {token}',
-            'User-Agent': 'ChessTransferBot/1.0 (erivera90)'
+            'Authorization': f'Bearer {token}'
         }
         self.base_url = "https://lichess.org/api"
 
