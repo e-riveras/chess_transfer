@@ -151,16 +151,18 @@ def import_game_to_lichess(client, pgn):
 def load_history():
     """Loads the history of imported games from a JSON file."""
     if not os.path.exists(HISTORY_FILE):
-        return {"imported_ids": [], "monthly_studies": {}}
+        return {"imported_ids": [], "studied_ids": [], "monthly_studies": {}}
     try:
         with open(HISTORY_FILE, 'r') as f:
             data = json.load(f)
             if "monthly_studies" not in data:
                 data["monthly_studies"] = {}
+            if "studied_ids" not in data:
+                data["studied_ids"] = []
             return data
     except json.JSONDecodeError:
         logger.error("Failed to decode history file. Starting with empty history.")
-        return {"imported_ids": [], "monthly_studies": {}}
+        return {"imported_ids": [], "studied_ids": [], "monthly_studies": {}}
 
 def save_history(history):
     """Saves the history of imported games to a JSON file."""
@@ -187,20 +189,21 @@ def main():
     # 1. Load local history
     history = load_history()
     imported_ids = set(history.get("imported_ids", []))
-    logger.info(f"Loaded {len(imported_ids)} imported games from local history.")
+    studied_ids = set(history.get("studied_ids", []))
+    logger.info(f"Loaded {len(imported_ids)} imported games and {len(studied_ids)} studied games from local history.")
 
     # 2. Get Chess.com archives
     archives = get_chesscom_archives(CHESSCOM_USERNAME)
     archives.sort(reverse=True) 
     
-    new_imports_count = 0
+    actions_count = 0
 
     for archive_url in archives:
         logger.info(f"Checking archive: {archive_url}")
         games = get_games_from_archive(archive_url)
         
         for game in games:
-            url = game.get('url') # e.g. https://www.chess.com/game/live/147465533948
+            url = game.get('url') 
             end_time = game.get('end_time')
             pgn = game.get('pgn')
             time_class = game.get('time_class')
@@ -208,33 +211,33 @@ def main():
             if not url or not pgn:
                 continue
                 
-            # Extract Game ID
             game_id = url.split('/')[-1]
             
-            if game_id in imported_ids:
-                # logger.debug(f"Skipping game {game_id} (Local History)")
-                continue
-
-            logger.info(f"Found new game {game_id} ended at {datetime.fromtimestamp(end_time)}. Attempting import...")
-            
-            import_status = import_game_to_lichess(client, pgn)
-            
-            if import_status == "IMPORTED" or import_status == "DUPLICATE":
-                # Mark as imported in our local history so we don't try again
-                imported_ids.add(game_id)
-                history["imported_ids"] = list(imported_ids)
-                new_imports_count += 1
+            # --- STEP 1: IMPORT ---
+            if game_id not in imported_ids:
+                logger.info(f"Found new game {game_id} ended at {datetime.fromtimestamp(end_time)}. Attempting import...")
+                import_status = import_game_to_lichess(client, pgn)
                 
-                # --- STUDY LOGIC ---
-                # Check for Rapid (>10min usually) and >20 moves
-                # Chess.com time_class is 'rapid'
-                # Move count: PGN usually has "20." if it reached move 20.
-                if time_class == 'rapid' and "20." in pgn:
+                if import_status == "IMPORTED" or import_status == "DUPLICATE":
+                    imported_ids.add(game_id)
+                    actions_count += 1
+                    if import_status == "IMPORTED":
+                        time.sleep(6)
+                    else:
+                        time.sleep(1)
+                else:
+                    time.sleep(1)
+                    continue # Import failed, skip study logic for now
+            
+            # --- STEP 2: STUDY ---
+            # Check eligibility: Rapid and >20 moves
+            if time_class == 'rapid' and "20." in pgn:
+                if game_id not in studied_ids:
+                    # Proceed to add to study
                     game_dt = datetime.fromtimestamp(end_time, tz=timezone.utc)
-                    month_name = game_dt.strftime("%B %Y") # e.g. "January 2026"
+                    month_name = game_dt.strftime("%B %Y")
                     study_name = f"Chess.com Rapid - {month_name}"
                     
-                    # Get or Create Study ID
                     study_id = history["monthly_studies"].get(study_name)
                     if not study_id:
                         logger.info(f"Creating new study: {study_name}")
@@ -244,32 +247,29 @@ def main():
                     
                     if study_id:
                         chapter_name = f"{game['white']['username']} vs {game['black']['username']}"
-                        study_manager.add_game_to_study(study_id, pgn, chapter_name)
-                # -------------------
-                
-                # Check limit
-                if new_imports_count >= MAX_IMPORTS_PER_RUN:
-                    logger.info(f"Reached limit of {MAX_IMPORTS_PER_RUN} imports for this run. Saving and stopping.")
-                    save_history(history)
-                    return
+                        if study_manager.add_game_to_study(study_id, pgn, chapter_name):
+                            studied_ids.add(game_id)
+                            actions_count += 1
+                            # Adding to study also consumes rate limit, be polite
+                            time.sleep(2) 
+            
+            # Update history object in memory
+            history["imported_ids"] = list(imported_ids)
+            history["studied_ids"] = list(studied_ids)
 
-                # Save periodically or just keep in memory?
-                # Safer to save periodically in case of crash, but strictly only need once at end.
-                # Let's save every 5 imports to be safe.
-                if new_imports_count % 5 == 0:
-                    save_history(history)
+            # Check limit
+            if actions_count >= MAX_IMPORTS_PER_RUN:
+                logger.info(f"Reached limit of {MAX_IMPORTS_PER_RUN} actions for this run. Saving and stopping.")
+                save_history(history)
+                return
 
-                if import_status == "IMPORTED":
-                    time.sleep(6) # Rate limit respect
-                else:
-                    time.sleep(1) # Polite check
-            else:
-                # Error (e.g. rate limit failed), do not add to history, try next time
-                time.sleep(1)
+            # Save periodically
+            if actions_count % 5 == 0 and actions_count > 0:
+                save_history(history)
         
     # Final save
     save_history(history)
-    logger.info(f"Sync complete. {new_imports_count} new games processed.")
+    logger.info(f"Sync complete. {actions_count} actions performed.")
 
 if __name__ == "__main__":
     main()

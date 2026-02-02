@@ -105,13 +105,13 @@ class TestSyncGames(unittest.TestCase):
         with patch("builtins.open", mock_open(read_data='{"imported_ids": ["123"]}')):
             with patch("os.path.exists", return_value=True):
                 history = load_history()
-                self.assertEqual(history, {"imported_ids": ["123"], "monthly_studies": {}})
+                self.assertEqual(history, {"imported_ids": ["123"], "monthly_studies": {}, "studied_ids": []})
 
     @patch('src.sync_games.HISTORY_FILE', 'data/history.json')
     def test_load_history_not_exists(self):
         with patch("os.path.exists", return_value=False):
             history = load_history()
-            self.assertEqual(history, {"imported_ids": [], "monthly_studies": {}})
+            self.assertEqual(history, {"imported_ids": [], "monthly_studies": {}, "studied_ids": []})
 
     @patch('src.sync_games.HISTORY_FILE', 'data/history.json')
     def test_save_history(self):
@@ -120,8 +120,6 @@ class TestSyncGames(unittest.TestCase):
             save_history({"imported_ids": ["123"]})
             m_open.assert_called_with('data/history.json', 'w')
             handle = m_open()
-            # Verify json dump wrote something resembling the json
-            # handle.write.assert_called() # tough to verify exact string with json.dump formatting
 
     @patch('src.sync_games.StudyManager')
     @patch('src.sync_games.time.sleep')
@@ -134,11 +132,11 @@ class TestSyncGames(unittest.TestCase):
     @patch('src.sync_games.LICHESS_TOKEN', 'fake_token')
     def test_main_sync_flow(self, mock_get_client, mock_save_hist, mock_load_hist, mock_get_archives, mock_get_games, mock_import, mock_sleep, mock_study_manager_cls):
         # Setup mocks
-        mock_load_hist.return_value = {"imported_ids": ["old_game_id"], "monthly_studies": {}}
+        mock_load_hist.return_value = {"imported_ids": ["old_game_id"], "monthly_studies": {}, "studied_ids": []}
         
         mock_get_archives.return_value = ['archive_url']
         
-        # Game 1: ID is "old_game_id" (should skip)
+        # Game 1: ID is "old_game_id" (should skip import, but might check study)
         # Game 2: ID is "new_game_id" (should import)
         # Game 2: Rapid, >20 moves (PGN has "20.") -> Should trigger study
         mock_get_games.return_value = [
@@ -163,6 +161,7 @@ class TestSyncGames(unittest.TestCase):
         # Mock StudyManager instance
         mock_study_manager = mock_study_manager_cls.return_value
         mock_study_manager.create_study.return_value = "study_id_123"
+        mock_study_manager.add_game_to_study.return_value = True
 
         main()
 
@@ -181,8 +180,9 @@ class TestSyncGames(unittest.TestCase):
         # Should save history
         mock_save_hist.assert_called()
         
-        # Should sleep
-        mock_sleep.assert_called_with(6)
+        # Should sleep(6) for import AND sleep(2) for study
+        mock_sleep.assert_any_call(6)
+        mock_sleep.assert_any_call(2)
 
 if __name__ == '__main__':
     unittest.main()
