@@ -29,7 +29,6 @@ class StudyManager:
         self.token = token
         self.headers = {
             'Authorization': f'Bearer {token}',
-            'Accept': 'application/json',
             'User-Agent': 'ChessTransferBot/1.0 (erivera90)'
         }
         self.base_url = "https://lichess.org/api"
