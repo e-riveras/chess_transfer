@@ -25,39 +25,42 @@ HISTORY_FILE = os.path.join(os.path.dirname(__file__), '../data/history.json')
 MAX_IMPORTS_PER_RUN = 100
 
 class StudyManager:
-    def __init__(self, client):
-        self.client = client
-        self.studies_cache = {} # Map "Name" -> "ID"
-
-    def get_or_create_study(self, study_name):
-        # ... (cached logic) ...
-        return None
+    def __init__(self, token):
+        self.token = token
+        self.headers = {
+            'Authorization': f'Bearer {token}',
+            'Accept': 'application/json',
+            'User-Agent': 'ChessTransferBot/1.0 (erivera90)'
+        }
+        self.base_url = "https://lichess.org/api"
 
     def create_study(self, name):
+        url = f"{self.base_url}/study"
+        payload = {'name': name, 'visibility': 'public'}
         try:
-            # berserk 0.14+ supports studies
-            # visibility: 'public', 'private', 'unlisted'
-            study = self.client.studies.create(name=name, visibility='public')
-            return study['id']
-        except berserk.exceptions.ResponseError as e:
-            logger.error(f"Failed to create study {name}: {e}")
-            return None
-        except AttributeError:
-            logger.error("Berserk client does not support studies (update library?).")
+            resp = requests.post(url, headers=self.headers, json=payload)
+            if resp.status_code == 200:
+                return resp.json()['id']
+            else:
+                logger.error(f"Failed to create study {name}: {resp.status_code} {resp.text}")
+                return None
+        except Exception as e:
+            logger.error(f"Request error creating study: {e}")
             return None
 
     def add_game_to_study(self, study_id, pgn, chapter_name):
+        url = f"{self.base_url}/study/{study_id}/import-pgn"
+        payload = {'pgn': pgn, 'name': chapter_name}
         try:
-            # import_pgn(study_id, pgn, name=None)
-            self.client.studies.import_pgn(study_id, pgn, name=chapter_name)
-            logger.info(f"Added game to study {study_id}")
-            return True
-        except berserk.exceptions.ResponseError as e:
-            if e.status_code == 429:
-                logger.warning("Rate limit on study write.")
-                time.sleep(60)
+            resp = requests.post(url, headers=self.headers, json=payload)
+            if resp.status_code == 200:
+                logger.info(f"Added game to study {study_id}")
+                return True
+            else:
+                logger.error(f"Failed to add to study {study_id}: {resp.status_code} {resp.text}")
                 return False
-            logger.error(f"Failed to add to study: {e}")
+        except Exception as e:
+            logger.error(f"Request error adding to study: {e}")
             return False
 
 def get_lichess_client():
@@ -159,9 +162,13 @@ def main():
         exit(1)
 
     logger.info("Starting Chess.com to Lichess sync...")
+    try:
+        logger.info(f"Berserk version: {berserk.__version__}")
+    except:
+        logger.info("Berserk version unknown.")
     
     client = get_lichess_client()
-    study_manager = StudyManager(client)
+    study_manager = StudyManager(LICHESS_TOKEN)
 
     # 1. Load local history
     history = load_history()
