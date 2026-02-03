@@ -1,3 +1,4 @@
+from __future__ import annotations
 import chess
 import chess.pgn
 import chess.engine
