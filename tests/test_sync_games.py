@@ -102,16 +102,16 @@ class TestSyncGames(unittest.TestCase):
 
     @patch('src.sync_games.HISTORY_FILE', 'data/history.json')
     def test_load_history_exists(self):
-        with patch("builtins.open", mock_open(read_data='{"imported_ids": ["123"]}')):
+        with patch("builtins.open", mock_open(read_data='{"imported_ids": ["123"]}' )):
             with patch("os.path.exists", return_value=True):
                 history = load_history()
-                self.assertEqual(history, {"imported_ids": ["123"], "monthly_studies": {}, "studied_ids": []})
+                self.assertEqual(history, {"imported_ids": ["123"], "monthly_studies": {}, "studied_ids": [], "last_analyzed_id": None})
 
     @patch('src.sync_games.HISTORY_FILE', 'data/history.json')
     def test_load_history_not_exists(self):
         with patch("os.path.exists", return_value=False):
             history = load_history()
-            self.assertEqual(history, {"imported_ids": [], "monthly_studies": {}, "studied_ids": []})
+            self.assertEqual(history, {"imported_ids": [], "monthly_studies": {}, "studied_ids": [], "last_analyzed_id": None})
 
     @patch('src.sync_games.HISTORY_FILE', 'data/history.json')
     def test_save_history(self):

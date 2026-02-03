@@ -144,7 +144,7 @@ def import_game_to_lichess(client, pgn):
 def load_history():
     """Loads the history of imported games from a JSON file."""
     if not os.path.exists(HISTORY_FILE):
-        return {"imported_ids": [], "studied_ids": [], "monthly_studies": {}}
+        return {"imported_ids": [], "studied_ids": [], "monthly_studies": {}, "last_analyzed_id": None}
     try:
         with open(HISTORY_FILE, 'r') as f:
             data = json.load(f)
@@ -152,18 +152,17 @@ def load_history():
                 data["monthly_studies"] = {}
             if "studied_ids" not in data:
                 data["studied_ids"] = []
+            if "last_analyzed_id" not in data:
+                data["last_analyzed_id"] = None
             return data
     except json.JSONDecodeError:
         logger.error("Failed to decode history file. Starting with empty history.")
-        return {"imported_ids": [], "studied_ids": [], "monthly_studies": {}}
+        return {"imported_ids": [], "studied_ids": [], "monthly_studies": {}, "last_analyzed_id": None}
 
 def save_history(history):
     """Saves the history of imported games to a JSON file."""
     try:
         os.makedirs(os.path.dirname(HISTORY_FILE), exist_ok=True)
-        # Convert set to list for JSON serialization if needed
-        # But we maintain imported_ids as list in dict, cast to set in memory
-        # We will handle the casting in main.
         with open(HISTORY_FILE, 'w') as f:
             json.dump(history, f, indent=2)
     except Exception as e:
@@ -187,7 +186,9 @@ def main():
     history = load_history()
     imported_ids = set(history.get("imported_ids", []))
     studied_ids = set(history.get("studied_ids", []))
-    logger.info(f"Loaded {len(imported_ids)} imported games and {len(studied_ids)} studied games from local history.")
+    last_analyzed_id = history.get("last_analyzed_id")
+    
+    logger.info(f"Loaded {len(imported_ids)} imported games, {len(studied_ids)} studied games.")
 
     # 2. Get Chess.com archives
     archives = get_chesscom_archives(CHESSCOM_USERNAME)
@@ -195,6 +196,10 @@ def main():
     
     actions_count = 0
     last_analyzable_pgn = None
+    last_analyzable_id = None
+    
+    # Track the absolute latest game found in the archives
+    latest_candidate_game = None
 
     for archive_url in archives:
         logger.info(f"Checking archive: {archive_url}")
@@ -212,6 +217,10 @@ def main():
                 continue
                 
             game_id = url.split('/')[-1]
+            
+            # Capture the very first game we see (which is the newest)
+            if latest_candidate_game is None:
+                latest_candidate_game = {'id': game_id, 'pgn': pgn}
             
             # --- STEP 1: IMPORT ---
             if game_id not in imported_ids:
@@ -251,9 +260,6 @@ def main():
                             history["monthly_studies"][study_name] = study_id
                             save_history(history)
                         else:
-                            # Log warning only once per run/study to avoid spam
-                            # We can check if we already warned for this study?
-                            # For now, just log.
                             logger.warning(f"Study '{study_name}' not found. Please create it manually on Lichess to enable auto-import.")
                     
                     if study_id:
@@ -261,7 +267,9 @@ def main():
                         if study_manager.add_game_to_study(study_id, pgn, chapter_name):
                             studied_ids.add(game_id)
                             actions_count += 1
-                            last_analyzable_pgn = pgn # Capture this for analysis
+                            # This was just transferred, so it's the primary candidate for analysis
+                            last_analyzable_pgn = pgn
+                            last_analyzable_id = game_id
                             time.sleep(2) 
                 else:
                     logger.debug(f"Game {game_id} already in studied_ids.")
@@ -287,9 +295,24 @@ def main():
     save_history(history)
     logger.info(f"Sync complete. {actions_count} actions performed.")
 
-    # --- STEP 3: ANALYZE LAST TRANSFERRED GAME ---
+    # --- STEP 3: ANALYSIS LOGIC ---
+    pgn_to_analyze = None
+    id_to_analyze = None
+
     if last_analyzable_pgn:
-        logger.info("Analyzing the last game transferred to study...")
+        logger.info("Analyzing the game just transferred to study...")
+        pgn_to_analyze = last_analyzable_pgn
+        id_to_analyze = last_analyzable_id
+    elif latest_candidate_game:
+        # No new game moved, check if the latest available game needs analysis
+        if latest_candidate_game['id'] != last_analyzed_id:
+            logger.info(f"No new transfer, but found recent game {latest_candidate_game['id']} not yet analyzed. analyzing...")
+            pgn_to_analyze = latest_candidate_game['pgn']
+            id_to_analyze = latest_candidate_game['id']
+        else:
+            logger.info(f"Latest game {latest_candidate_game['id']} has already been analyzed.")
+
+    if pgn_to_analyze:
         stockfish_path = os.getenv("STOCKFISH_PATH")
         gemini_key = os.getenv("GEMINI_API_KEY")
         
@@ -306,16 +329,21 @@ def main():
                 
                 # Run Analysis
                 with ChessAnalyzer(stockfish_path) as analyzer:
-                    moments = analyzer.analyze_game(last_analyzable_pgn)
+                    moments = analyzer.analyze_game(pgn_to_analyze)
                     for moment in moments:
                         moment.explanation = narrator.explain_mistake(moment)
                     
                     generate_markdown_report(moments, output_file="analysis_report.md")
                     logger.info("Analysis report generated.")
+                    
+                    # Update history with analyzed ID
+                    history["last_analyzed_id"] = id_to_analyze
+                    save_history(history)
+                    
             except Exception as e:
                 logger.error(f"Analysis failed: {e}")
     else:
-        logger.info("No new games were transferred to study this run, skipping analysis.")
+        logger.info("No games to analyze.")
 
 if __name__ == "__main__":
     main()
