@@ -222,9 +222,16 @@ def main():
         pgn_file_path = sys.argv[1]
 
     if not stockfish_path or not os.path.exists(stockfish_path):
-        # ... (stockfish check)
+        logger.error(f"Stockfish path not found or invalid: {stockfish_path}")
+        logger.error("Please set STOCKFISH_PATH in .env")
+        sys.exit(1)
 
-    # ... (narrator init)
+    # Initialize Narrator
+    if gemini_key:
+        narrator = GoogleGeminiNarrator(gemini_key)
+    else:
+        logger.warning("GEMINI_API_KEY not set. Using MockNarrator.")
+        narrator = MockNarrator()
 
     # Read PGN
     pgn_text = ""
@@ -245,7 +252,21 @@ def main():
             f.write(pgn_text)
 
     # Run Analysis
-    # ...
+    try:
+        with ChessAnalyzer(stockfish_path) as analyzer:
+            logger.info("Starting Engine Analysis...")
+            moments = analyzer.analyze_game(pgn_text)
+            
+            logger.info(f"Engine Analysis complete. Found {len(moments)} moments. Starting LLM narration...")
+            
+            for moment in moments:
+                moment.explanation = narrator.explain_mistake(moment)
+                
+            generate_markdown_report(moments)
+            
+    except Exception as e:
+        logger.exception(f"An unexpected error occurred: {e}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

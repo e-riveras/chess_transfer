@@ -121,6 +121,9 @@ class TestSyncGames(unittest.TestCase):
             m_open.assert_called_with('data/history.json', 'w')
             handle = m_open()
 
+    @patch('src.sync_games.generate_markdown_report')
+    @patch('src.sync_games.GoogleGeminiNarrator')
+    @patch('src.sync_games.ChessAnalyzer')
     @patch('src.sync_games.StudyManager')
     @patch('src.sync_games.time.sleep')
     @patch('src.sync_games.import_game_to_lichess')
@@ -130,7 +133,7 @@ class TestSyncGames(unittest.TestCase):
     @patch('src.sync_games.save_history')
     @patch('src.sync_games.get_lichess_client')
     @patch('src.sync_games.LICHESS_TOKEN', 'fake_token')
-    def test_main_sync_flow(self, mock_get_client, mock_save_hist, mock_load_hist, mock_get_archives, mock_get_games, mock_import, mock_sleep, mock_study_manager_cls):
+    def test_main_sync_flow(self, mock_get_client, mock_save_hist, mock_load_hist, mock_get_archives, mock_get_games, mock_import, mock_sleep, mock_study_manager_cls, mock_analyzer, mock_narrator, mock_report):
         # Setup mocks
         mock_load_hist.return_value = {"imported_ids": ["old_game_id"], "monthly_studies": {}, "studied_ids": []}
         

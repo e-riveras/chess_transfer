@@ -17,6 +17,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
+      - name: Install Stockfish Engine
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y stockfish
+          echo "STOCKFISH_PATH=/usr/games/stockfish" >> $GITHUB_ENV
+          stockfish --version
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
@@ -31,6 +38,7 @@ jobs:
           LICHESS_TOKEN: ${{ secrets.LICHESS_TOKEN }}
           CHESSCOM_USERNAME: erivera90
           LOG_LEVEL: DEBUG
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           python src/sync_games.py
 
@@ -39,7 +47,7 @@ jobs:
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git add data/history.json
-          git commit -m "Update import history" || echo "No changes to history"
+          git add data/history.json analysis_report.md || true
+          git commit -m "Update import history and analysis report" || echo "No changes to history"
           git pull --rebase
           git push

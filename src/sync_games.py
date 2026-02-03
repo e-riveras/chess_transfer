@@ -5,8 +5,13 @@ import berserk
 import time
 import re
 import json
+import sys
 from datetime import datetime, timezone
 from dotenv import load_dotenv
+
+# Allow importing main.py from root
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from main import ChessAnalyzer, GoogleGeminiNarrator, MockNarrator, generate_markdown_report, CrucialMoment
 
 # Configure logging
 log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
@@ -189,6 +194,7 @@ def main():
     archives.sort(reverse=True) 
     
     actions_count = 0
+    last_analyzable_pgn = None
 
     for archive_url in archives:
         logger.info(f"Checking archive: {archive_url}")
@@ -255,6 +261,7 @@ def main():
                         if study_manager.add_game_to_study(study_id, pgn, chapter_name):
                             studied_ids.add(game_id)
                             actions_count += 1
+                            last_analyzable_pgn = pgn # Capture this for analysis
                             time.sleep(2) 
                 else:
                     logger.debug(f"Game {game_id} already in studied_ids.")
@@ -270,15 +277,45 @@ def main():
             if actions_count >= MAX_IMPORTS_PER_RUN:
                 logger.info(f"Reached limit of {MAX_IMPORTS_PER_RUN} actions for this run. Saving and stopping.")
                 save_history(history)
-                return
-
-            # Save periodically
-            if actions_count % 5 == 0 and actions_count > 0:
-                save_history(history)
+                # Break out of both loops
+                break
+        
+        if actions_count >= MAX_IMPORTS_PER_RUN:
+            break
         
     # Final save
     save_history(history)
     logger.info(f"Sync complete. {actions_count} actions performed.")
+
+    # --- STEP 3: ANALYZE LAST TRANSFERRED GAME ---
+    if last_analyzable_pgn:
+        logger.info("Analyzing the last game transferred to study...")
+        stockfish_path = os.getenv("STOCKFISH_PATH")
+        gemini_key = os.getenv("GEMINI_API_KEY")
+        
+        if not stockfish_path:
+            logger.error("Skipping analysis: STOCKFISH_PATH not set.")
+        else:
+            try:
+                # Initialize Narrator
+                if gemini_key:
+                    narrator = GoogleGeminiNarrator(gemini_key)
+                else:
+                    logger.warning("GEMINI_API_KEY not set. Using MockNarrator.")
+                    narrator = MockNarrator()
+                
+                # Run Analysis
+                with ChessAnalyzer(stockfish_path) as analyzer:
+                    moments = analyzer.analyze_game(last_analyzable_pgn)
+                    for moment in moments:
+                        moment.explanation = narrator.explain_mistake(moment)
+                    
+                    generate_markdown_report(moments, output_file="analysis_report.md")
+                    logger.info("Analysis report generated.")
+            except Exception as e:
+                logger.error(f"Analysis failed: {e}")
+    else:
+        logger.info("No new games were transferred to study this run, skipping analysis.")
 
 if __name__ == "__main__":
     main()
