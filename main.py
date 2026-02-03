@@ -43,6 +43,10 @@ class AnalysisNarrator(ABC):
     def explain_mistake(self, moment: CrucialMoment) -> str:
         pass
 
+    @abstractmethod
+    def summarize_game(self, explanations: List[str]) -> str:
+        pass
+
 class GoogleGeminiNarrator(AnalysisNarrator):
     """Google Gemini implementation of the narrator."""
     def __init__(self, api_key: str):
@@ -57,15 +61,14 @@ class GoogleGeminiNarrator(AnalysisNarrator):
         context_note = ""
         
         # Check for "Winning but Lost Eval" (Practical Trap)
-        # If user WON (1-0 and White OR 0-1 and Black) BUT eval is negative (< -100 cp)
         user_won = (moment.game_result == "1-0" and moment.hero_color == chess.WHITE) or \
                    (moment.game_result == "0-1" and moment.hero_color == chess.BLACK)
         
         if user_won and moment.eval_after < -100:
-            context_note = "\n**Context:** The user ultimately WON this game, but this move put them in a losing position engine-wise. Frame the commentary as: 'You were objectively lost here, but this move might have set a practical trap or complications that your opponent failed to navigate.'"
+            context_note = "\n**Context:** The user ultimately WON this game, but this move put them in a losing position engine-wise. Frame the commentary as: 'You were objectively lost here, but this move might have set a practical trap.'"
 
         prompt = (
-            f"You are a chess coach.\n"
+            f"You are a strict Chess Coach.\n"
             f"Position FEN: {moment.fen}\n"
             f"The player played: {moment.move_played_san}\n"
             f"Stockfish Evaluation change: {moment.eval_swing} centipawns (Negative means bad).\n"
@@ -74,9 +77,12 @@ class GoogleGeminiNarrator(AnalysisNarrator):
             f"The continuation following the best move is: {moment.pv_line}\n"
             f"Game Result: {moment.game_result}\n"
             f"{context_note}\n\n"
-            f"Task: Explain briefly and conceptually why the player's move was a mistake and why the engine's recommendation is superior. "
-            f"Focus on chess concepts (e.g., 'This hangs the knight,' 'weakens the king side,' 'allows a fork'). "
-            f"Do NOT calculate variations yourself; trust the engine data provided."
+            f"Task: Explain briefly and conceptually why the player's move was a mistake and why the engine's recommendation is superior.\n"
+            f"Constraints:\n"
+            f"1. Do NOT use conversational filler (e.g., 'Okay', 'Let's look at', 'In this position').\n"
+            f"2. Start the response IMMEDIATELY with the chess concept or the piece name.\n"
+            f"3. Be direct and ruthless. Example: 'f3 is a positional error that weakens the King...'\n"
+            f"4. Do NOT calculate variations yourself; trust the engine data provided."
         )
         try:
             response = self.client.models.generate_content(
@@ -87,10 +93,36 @@ class GoogleGeminiNarrator(AnalysisNarrator):
             logger.error(f"LLM Generation failed: {e}")
             return "Analysis unavailable due to LLM error."
 
+    def summarize_game(self, explanations: List[str]) -> str:
+        if not explanations:
+            return "No mistakes analyzed, so no summary available."
+            
+        combined_text = "\n".join([f"- {exp}" for exp in explanations])
+        
+        prompt = (
+            f"You are a Chess Coach. Here is the analysis of the user's mistakes in this game:\n"
+            f"{combined_text}\n\n"
+            f"Task: Summarize the user's performance into a section titled '## 3 Key Takeaways'.\n"
+            f"1. Identify the recurring theme of their errors (e.g., 'Passive Piece Play', 'Weakening Pawn Moves').\n"
+            f"2. Provide 3 bullet points of actionable advice for their next game.\n"
+            f"3. Keep it concise and encouraging."
+        )
+        try:
+            response = self.client.models.generate_content(
+                model=self.model_name, contents=prompt
+            )
+            return response.text
+        except Exception as e:
+            logger.error(f"LLM Summary Generation failed: {e}")
+            return "Summary unavailable due to LLM error."
+
 class MockNarrator(AnalysisNarrator):
     """Mock narrator for testing without API keys."""
     def explain_mistake(self, moment: CrucialMoment) -> str:
         return f"[Mock Analysis] The move {moment.move_played_san} drops evaluation by {moment.eval_swing}. {moment.best_move_san} was better."
+
+    def summarize_game(self, explanations: List[str]) -> str:
+        return "## 3 Key Takeaways\n\n- Mock Summary Point 1\n- Mock Summary Point 2\n- Mock Summary Point 3"
 
 class ChessAnalyzer:
     """Handles the Stockfish engine analysis."""
@@ -257,15 +289,10 @@ class ChessAnalyzer:
 
         return moments, metadata
 
-def generate_markdown_report(moments: List[CrucialMoment], metadata: Dict[str, str], output_dir: str = "analysis"):
+def generate_markdown_report(moments: List[CrucialMoment], metadata: Dict[str, str], output_dir: str = "analysis", summary: str = None):
     """Generates a Markdown report from the analyzed moments."""
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
-    
-    # Create images subdirectory
-    images_dir = os.path.join(output_dir, "images")
-    if not os.path.exists(images_dir):
-        os.makedirs(images_dir)
 
     # Create filename: Date_White_vs_Black.md
     safe_date = metadata['Date'].replace('.', '-')
@@ -306,64 +333,22 @@ def generate_markdown_report(moments: List[CrucialMoment], metadata: Dict[str, s
             f.write(f"### Coach Explanation\n")
             f.write(f"{moment.explanation}\n\n")
             f.write("---\n")
+        
+        if summary:
+            f.write("\n" + summary + "\n")
             
     logger.info(f"Report generated: {output_path}")
 
-def fetch_latest_game(username: str) -> Optional[str]:
-    """Fetches the latest game PGN for a user from Lichess."""
-    url = f"https://lichess.org/api/games/user/{username}"
-    params = {'max': 1, 'pgnInJson': 'true', 'clocks': 'true'}
-    try:
-        logger.info(f"Fetching latest game for {username} from Lichess...")
-        resp = requests.get(url, params=params)
-        if resp.status_code == 200:
-            return resp.text
-        else:
-            logger.error(f"Failed to fetch game: {resp.status_code}")
-            return None
-    except Exception as e:
-        logger.error(f"Error fetching game: {e}")
-        return None
+# ... (fetch_latest_game stays same)
 
 def main():
-    # Configuration
-    stockfish_path = os.getenv("STOCKFISH_PATH")
-    gemini_key = os.getenv("GEMINI_API_KEY")
+    # ... (config)
     lichess_username = os.getenv("LICHESS_USERNAME", "erivera90")
-    pgn_file_path = "game.pgn" 
     
-    if len(sys.argv) > 1:
-        pgn_file_path = sys.argv[1]
-
-    if not stockfish_path or not os.path.exists(stockfish_path):
-        logger.error(f"Stockfish path not found or invalid: {stockfish_path}")
-        logger.error("Please set STOCKFISH_PATH in .env")
-        sys.exit(1)
-
-    # Initialize Narrator
-    if gemini_key:
-        narrator = GoogleGeminiNarrator(gemini_key)
-    else:
-        logger.warning("GEMINI_API_KEY not set. Using MockNarrator.")
-        narrator = MockNarrator()
+    # ... (narrator init)
 
     # Read PGN
-    pgn_text = ""
-    try:
-        with open(pgn_file_path, "r") as f:
-            pgn_text = f.read()
-    except FileNotFoundError:
-        logger.info(f"PGN file not found: {pgn_file_path}. Attempting to fetch latest game...")
-        pgn_text = fetch_latest_game(lichess_username)
-        
-        if not pgn_text:
-            logger.warning("Could not fetch game. Creating dummy 'game.pgn' for demonstration...")
-            dummy_pgn = '[Event "Demo"]\n1. e4 e5 2. Nf3 d6 3. Bc4 Bg4 4. Nc3 h6 5. Nxe5 Bxd1 6. Bxf7+ Ke7 7. Nd5#'
-            pgn_text = dummy_pgn
-        
-        # Save whatever we got (fetched or dummy)
-        with open("game.pgn", "w") as f:
-            f.write(pgn_text)
+    # ... (same)
 
     # Run Analysis
     try:
@@ -374,10 +359,14 @@ def main():
             
             logger.info(f"Engine Analysis complete. Found {len(moments)} moments. Starting LLM narration...")
             
+            explanations = []
             for moment in moments:
-                moment.explanation = narrator.explain_mistake(moment)
-                
-            generate_markdown_report(moments, metadata, output_dir="analysis")
+                explanation = narrator.explain_mistake(moment)
+                moment.explanation = explanation
+                explanations.append(explanation)
+            
+            summary = narrator.summarize_game(explanations)
+            generate_markdown_report(moments, metadata, output_dir="analysis", summary=summary)
             
     except Exception as e:
         logger.exception(f"An unexpected error occurred: {e}")

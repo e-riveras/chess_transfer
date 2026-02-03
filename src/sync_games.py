@@ -332,15 +332,21 @@ def main():
                     # Pass username to filter blunders
                     moments, metadata = analyzer.analyze_game(pgn_to_analyze, hero_username=CHESSCOM_USERNAME)
                     
+                    explanations = []
                     for moment in moments:
-                        moment.explanation = narrator.explain_mistake(moment)
+                        explanation = narrator.explain_mistake(moment)
+                        moment.explanation = explanation
+                        explanations.append(explanation)
                     
+                    # Generate Summary
+                    summary = narrator.summarize_game(explanations)
+
                     # Ensure analysis directory exists
                     output_dir = os.path.join(os.path.dirname(__file__), '../analysis')
                     if not os.path.exists(output_dir):
                         os.makedirs(output_dir)
 
-                    generate_markdown_report(moments, metadata, output_dir=output_dir)
+                    generate_markdown_report(moments, metadata, output_dir=output_dir, summary=summary)
                     logger.info("Analysis report generated in analysis/ folder.")
                     
                     # Update history with analyzed ID
