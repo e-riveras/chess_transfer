@@ -220,21 +220,7 @@ class ChessAnalyzer:
             is_decided_after = abs(cp_after) > 500
             same_result = (cp_before > 0 and cp_after > 0) or (cp_before < 0 and cp_after < 0)
 
-            # Logic: Skip if game was decided and result didn't flip
             if is_decided_before and is_decided_after and same_result:
-                # But KEEP if it crosses threshold?
-                # Requirement: "SKIP the analysis ONLY IF: is_decided_before AND is_decided_after AND same_result"
-                # Requirement: "KEEP the analysis IF: The evaluation crosses the threshold"
-                # If delta < -threshold (e.g. -600), does it override the skip?
-                # Example: +900 -> +600 (Delta -300).
-                # Decided (T), Decided (T), Same (T). -> SKIP.
-                # Example: +600 -> +100 (Delta -500).
-                # Decided (T), Decided (F), Same (T). -> KEEP (condition fails).
-                # Example: +200 -> -200 (Delta -400).
-                # Decided (F), Decided (F), Same (F). -> KEEP.
-                
-                # So the simple Skip condition handles all cases correctly EXCEPT if user wants to see "blunders in garbage time".
-                # The user explicitly said: "SKIP... if I was winning and stayed winning... skip it."
                 continue
 
             if delta < -threshold:
@@ -249,20 +235,18 @@ class ChessAnalyzer:
 
                 # --- Generate SVG with Arrows ---
                 arrows = []
-                
                 # Arrow for the move played (Mistake) - Red
-                # node.move is the move played
-                arrows.append(chess.svg.Arrow(node.move.from_square, node.move.to_square, color="#d40000cc")) # Red with alpha
+                arrows.append(chess.svg.Arrow(node.move.from_square, node.move.to_square, color="#d40000cc")) 
                 
                 # Arrow for the best move (Engine) - Green
                 if engine_best_move:
-                    arrows.append(chess.svg.Arrow(engine_best_move.from_square, engine_best_move.to_square, color="#008800cc")) # Green with alpha
+                    arrows.append(chess.svg.Arrow(engine_best_move.from_square, engine_best_move.to_square, color="#008800cc"))
 
-                # Orientation: View from Hero's perspective (defaults to White if unknown)
+                # Orientation: View from Hero's perspective
                 orientation = hero_color if hero_color is not None else chess.WHITE
 
                 svg_data = chess.svg.board(
-                    board=board_before, # Show position BEFORE the move
+                    board=board_before, 
                     arrows=arrows,
                     orientation=orientation,
                     size=400,
@@ -279,7 +263,7 @@ class ChessAnalyzer:
                     eval_after=cp_after,
                     pv_line=pv_line,
                     explanation=None,
-                    svg_content=svg_data, # Store SVG content
+                    svg_content=svg_data,
                     game_result=metadata["Result"],
                     hero_color=hero_color
                 )
@@ -293,6 +277,11 @@ def generate_markdown_report(moments: List[CrucialMoment], metadata: Dict[str, s
     """Generates a Markdown report from the analyzed moments."""
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
+    
+    # Create images subdirectory
+    images_dir = os.path.join(output_dir, "images")
+    if not os.path.exists(images_dir):
+        os.makedirs(images_dir)
 
     # Create filename: Date_White_vs_Black.md
     safe_date = metadata['Date'].replace('.', '-')
@@ -339,16 +328,61 @@ def generate_markdown_report(moments: List[CrucialMoment], metadata: Dict[str, s
             
     logger.info(f"Report generated: {output_path}")
 
-# ... (fetch_latest_game stays same)
+def fetch_latest_game(username: str) -> Optional[str]:
+    """Fetches the latest game PGN for a user from Lichess."""
+    url = f"https://lichess.org/api/games/user/{username}"
+    params = {'max': 1, 'pgnInJson': 'true', 'clocks': 'true'}
+    try:
+        logger.info(f"Fetching latest game for {username} from Lichess...")
+        resp = requests.get(url, params=params)
+        if resp.status_code == 200:
+            return resp.text
+        else:
+            logger.error(f"Failed to fetch game: {resp.status_code}")
+            return None
+    except Exception as e:
+        logger.error(f"Error fetching game: {e}")
+        return None
 
 def main():
-    # ... (config)
+    # Configuration
+    stockfish_path = os.getenv("STOCKFISH_PATH")
+    gemini_key = os.getenv("GEMINI_API_KEY")
     lichess_username = os.getenv("LICHESS_USERNAME", "erivera90")
+    pgn_file_path = "game.pgn" 
     
-    # ... (narrator init)
+    if len(sys.argv) > 1:
+        pgn_file_path = sys.argv[1]
+
+    if not stockfish_path or not os.path.exists(stockfish_path):
+        logger.error(f"Stockfish path not found or invalid: {stockfish_path}")
+        logger.error("Please set STOCKFISH_PATH in .env")
+        sys.exit(1)
+
+    # Initialize Narrator
+    if gemini_key:
+        narrator = GoogleGeminiNarrator(gemini_key)
+    else:
+        logger.warning("GEMINI_API_KEY not set. Using MockNarrator.")
+        narrator = MockNarrator()
 
     # Read PGN
-    # ... (same)
+    pgn_text = ""
+    try:
+        with open(pgn_file_path, "r") as f:
+            pgn_text = f.read()
+    except FileNotFoundError:
+        logger.info(f"PGN file not found: {pgn_file_path}. Attempting to fetch latest game...")
+        pgn_text = fetch_latest_game(lichess_username)
+        
+        if not pgn_text:
+            logger.warning("Could not fetch game. Creating dummy 'game.pgn' for demonstration...")
+            dummy_pgn = '[Event "Demo"]\n1. e4 e5 2. Nf3 d6 3. Bc4 Bg4 4. Nc3 h6 5. Nxe5 Bxd1 6. Bxf7+ Ke7 7. Nd5#'
+            pgn_text = dummy_pgn
+        
+        # Save whatever we got (fetched or dummy)
+        with open("game.pgn", "w") as f:
+            f.write(pgn_text)
 
     # Run Analysis
     try:
