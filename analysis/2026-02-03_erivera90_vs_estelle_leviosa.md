@@ -2,7 +2,7 @@
 
 **Date:** 2026.02.03 | **Event:** Live Chess | **Site:** Chess.com
 
-Found **8** crucial moments where evaluation dropped significantly.
+Found **7** crucial moments where evaluation dropped significantly.
 
 ## Moment 1
 
@@ -12,11 +12,13 @@ Found **8** crucial moments where evaluation dropped significantly.
 
 - **You Played:** **f3** <span style='color:red'>❌ (Red Arrow)</span>
 - **Engine Best:** **Re1** <span style='color:green'>✅ (Green Arrow)</span>
-- **Eval Swing:** -279 cp
-- **Variation:** _Re1 Bf5_
+- **Eval Swing:** -295 cp
+- **Variation:** _Re1 Nc5_
 
 ### Coach Explanation
-The move f3 was a mistake because it weakens the kingside pawn structure unnecessarily and doesn't address the immediate threat posed by the Black knight on e4. Re1, on the other hand, is superior because it prepares to improve the position by developing the rook to a more active square and potentially connecting the rooks. Furthermore, it anticipates and prepares a defense against the developing threats like Bf5 suggested by Stockfish. By playing f3, white simply makes his position worse without gaining any tangible benefit, whereas Re1 is a developing move with a clear purpose and defensive value.
+Okay, let's analyze this move. `f3` weakens the position significantly according to the engine. While you ultimately won the game, `f3` was a serious blunder in this position.
+
+The main issue is that it creates further weaknesses in your pawn structure and doesn't address the immediate threats. The engine preferred `Re1` because it likely develops a piece to a more active square while preparing to defend against incoming threats. `f3` doesn't develop anything and doesn't seem to improve your position strategically. While it's possible `f3` presented some tactical possibilities that your opponent missed, objectively you were lost after this move.
 
 
 ---
@@ -28,15 +30,13 @@ The move f3 was a mistake because it weakens the kingside pawn structure unneces
 
 - **You Played:** **Rad1** <span style='color:red'>❌ (Red Arrow)</span>
 - **Engine Best:** **Nd3** <span style='color:green'>✅ (Green Arrow)</span>
-- **Eval Swing:** -273 cp
+- **Eval Swing:** -280 cp
 - **Variation:** _Nd3 Rad8_
 
 ### Coach Explanation
-Okay, let's analyze this position.
+Okay, let's analyze this. While you ultimately won the game, Rad1 was a serious error according to the engine. Rad1 develops the rook, which seems like a reasonable idea, but it doesn't address the immediate threats and tactical vulnerabilities. The engine's preferred move, Nd3, likely improves the knight's position, potentially defending key squares or preparing an attack. Rad1 doesn't accomplish any of that and the position deteriorates.
 
-The player's move, Rad1, is a mistake because it passively develops the rook without addressing the immediate threat posed by the opponent's pieces. The Stockfish evaluation drop suggests it significantly worsens White's position.
-
-The engine's suggested move, Nd3, is superior because it directly addresses the pressure on the e5 knight and improves the knight's position. While it might seem like a simple defensive move, it prevents immediate tactical complications and aims to re-establish a more solid structure. Rad1 doesn't contribute to solving the immediate tactical problem. In other words, the player's move fails to react to the opponent's active pieces, while Nd3 is a proactive defensive step.
+While Rad1 may have inadvertently created a practical trap that your opponent missed, objectively, you were lost here. Nd3 was the best way to minimize the damage.
 
 
 ---
@@ -44,21 +44,21 @@ The engine's suggested move, Nd3, is superior because it directly addresses the 
 
 ![Position](images/2026-02-03_erivera90_vs_estelle_leviosa_moment_3.svg)
 
-**FEN:** `5k2/p4ppp/2pN4/3bN2n/5B2/5P2/1PP3PP/6K1 w - - 2 21`
+**FEN:** `4rrk1/ppp2ppp/3bbn2/4N3/5B2/2N2P2/PPP3PP/3R1RK1 w - - 2 14`
 
-- **You Played:** **Nd7+** <span style='color:red'>❌ (Red Arrow)</span>
-- **Engine Best:** **Be3** <span style='color:green'>✅ (Green Arrow)</span>
-- **Eval Swing:** -540 cp
-- **Variation:** _Be3 g6 Ne4 Bxe4_
+- **You Played:** **Nb5** <span style='color:red'>❌ (Red Arrow)</span>
+- **Engine Best:** **Nd3** <span style='color:green'>✅ (Green Arrow)</span>
+- **Eval Swing:** -364 cp
+- **Variation:** _Nd3 Rd8 Bxd6 Rxd6_
 
 ### Coach Explanation
-Okay, here's the breakdown of why Nd7+ was a mistake in that position, and why Be3 is a better move:
+Okay, let's break down this move. `Nb5` isn't a good move. While you ultimately won the game, at this point you were objectively losing. The engine's strong negative evaluation of `-350` after `Nb5` indicates you handed the advantage to your opponent.
 
-*   **Nd7+ is a mistake because it leads to a significant material disadvantage.** According to Stockfish, it worsens the position by -540, indicating a dramatic shift in Black's favor. While it might look like a check, it doesn't achieve any lasting advantage and likely exposes the knight to capture or forces it to retreat to an even worse square.
+The main problem is that `Nb5` doesn't accomplish anything concrete and likely weakens your position. It probably allows your opponent to improve their pieces or create threats against your position. We don't know the specifics without diving deep, but the engine's evaluation suggests it likely allows your opponent to win material, control key squares, or launch an attack.
 
-*   **Be3 is superior because it improves the White position.** The move likely defends an important square, prepares a better position for the knight, and potentially develops pressure without sacrificing material. The continuation "Be3 g6 Ne4 Bxe4" suggests White can trade a Bishop for a knight, potentially improving pawn structure and/or relieving Black's control.
+The engine's suggestion, `Nd3`, is better because it likely maintains defensive stability and prepares for future action without handing the initiative to your opponent. The suggested continuation `Nd3 Rd8 Bxd6 Rxd6` probably leads to a more even position or perhaps allows White to slowly improve without taking unnecessary risks.
 
-In essence, Nd7+ is a tactical blunder that doesn't achieve a strategic goal, while Be3 is a solid positional move that improves White's chances.
+Essentially, while your move may have introduced some practical complications that your opponent couldn't handle, in a perfect game, it would have led to a loss. `Nb5` gave your opponent an opportunity to capitalize on a tactical or positional weakness, while `Nd3` likely avoided those pitfalls and kept you in the game.
 
 
 ---
@@ -66,17 +66,19 @@ In essence, Nd7+ is a tactical blunder that doesn't achieve a strategic goal, wh
 
 ![Position](images/2026-02-03_erivera90_vs_estelle_leviosa_moment_4.svg)
 
-**FEN:** `8/p2Nkppp/2pN4/3b3n/5B2/5P2/1PP3PP/6K1 w - - 4 22`
+**FEN:** `5k2/p4ppp/2pN4/3bN2n/5B2/5P2/1PP3PP/6K1 w - - 2 21`
 
-- **You Played:** **g4** <span style='color:red'>❌ (Red Arrow)</span>
-- **Engine Best:** **Be5** <span style='color:green'>✅ (Green Arrow)</span>
-- **Eval Swing:** -535 cp
-- **Variation:** _Be5 Kxd7 Nb7 f6_
+- **You Played:** **Nd7+** <span style='color:red'>❌ (Red Arrow)</span>
+- **Engine Best:** **Be3** <span style='color:green'>✅ (Green Arrow)</span>
+- **Eval Swing:** -532 cp
+- **Variation:** _Be3 g5 Nd3 Kg8_
 
 ### Coach Explanation
-Okay, let's analyze this. The player's move `g4` weakens the kingside pawn structure and does not address the immediate threat of the Black knight on h5 potentially causing problems. More importantly, it appears to simply be a wasted move.
+Okay, let's analyze this position.
 
-The engine's suggested move `Be5` directly attacks the Black King and forces a response. This allows White to exploit the weakened Black position and possibly gain a decisive advantage by winning material. The fact that Black king will take the bishop allows white knight on d6 to jump to b7, attacking the rook. `Be5` is a tactical shot that actively creates pressure and generates opportunities, whereas `g4` does nothing beneficial.
+The player's move, Nd7+, was a mistake because it significantly worsened White's position according to Stockfish, dropping the evaluation by a whopping 532 centipawns. This suggests the check, while seemingly active, doesn't achieve anything concrete and actually *allows* Black to improve their position or create threats. It likely forces the knight into a less favorable square, potentially exposing it to attack or preventing it from fulfilling a more useful role. The check is tactically unsound in this context.
+
+Stockfish's suggestion of Be3 is superior because it improves White's position without giving Black any immediate advantages. Be3 likely serves a defensive purpose, supporting the knight on N5 and controlling important squares. It prepares for future development or tactical opportunities without weakening White's position. In short, Be3 is a solid improving move, whereas Nd7+ gives Black a free tempo.
 
 
 ---
@@ -84,15 +86,17 @@ The engine's suggested move `Be5` directly attacks the Black King and forces a r
 
 ![Position](images/2026-02-03_erivera90_vs_estelle_leviosa_moment_5.svg)
 
-**FEN:** `8/8/2N1k3/5b2/1P6/5pPp/5K2/8 w - - 0 39`
+**FEN:** `8/p2Nkppp/2pN4/3b3n/5B2/5P2/1PP3PP/6K1 w - - 4 22`
 
-- **You Played:** **Kg1** <span style='color:red'>❌ (Red Arrow)</span>
-- **Engine Best:** **Nd4+** <span style='color:green'>✅ (Green Arrow)</span>
-- **Eval Swing:** -435 cp
-- **Variation:** _Nd4+ Kd5 Nxf3 Kc4_
+- **You Played:** **g4** <span style='color:red'>❌ (Red Arrow)</span>
+- **Engine Best:** **Be5** <span style='color:green'>✅ (Green Arrow)</span>
+- **Eval Swing:** -520 cp
+- **Variation:** _Be5_
 
 ### Coach Explanation
-The player's move Kg1 is a mistake because it keeps the King passive and doesn't address the immediate threats and pressure. The engine's suggestion of Nd4+ is superior because it's a forcing move that improves the Knight's position while creating a check. This forces the Black King to react, potentially winning material or gaining a decisive advantage by getting the knight into the attack. Basically, Kg1 does nothing while Nd4+ is active and disruptive.
+Okay, let's analyze this move. `g4` significantly worsened your position according to Stockfish. While you ultimately won the game, objectively, you were lost here. The move `g4` likely weakens your kingside pawn structure and opens lines for Black's attack, especially with their knight on h5 already eyeing that side of the board.
+
+Stockfish suggests `Be5` as a much better move. Conceptually, this likely achieves a few things: it controls key central squares, it potentially restricts the black knight's activity, and it challenges Black to deal with the bishop, perhaps creating a more complex situation. Your move, `g4`, probably created immediate tactical or strategic problems that your opponent couldn't solve, but it was a gamble from a position of weakness. Essentially, while `g4` might have presented your opponent with a difficult *practical* problem, `Be5` would have been a more *sound* chess move.
 
 
 ---
@@ -100,17 +104,19 @@ The player's move Kg1 is a mistake because it keeps the King passive and doesn't
 
 ![Position](images/2026-02-03_erivera90_vs_estelle_leviosa_moment_6.svg)
 
-**FEN:** `8/8/2N1k3/8/1P4b1/5pPp/8/6K1 w - - 2 40`
+**FEN:** `8/8/2N1k3/5b2/1P6/5pPp/5K2/8 w - - 0 39`
 
-- **You Played:** **Nd4+** <span style='color:red'>❌ (Red Arrow)</span>
-- **Engine Best:** **b5** <span style='color:green'>✅ (Green Arrow)</span>
-- **Eval Swing:** -474 cp
-- **Variation:** _b5 Kd5 Ne7+ Ke4_
+- **You Played:** **Kg1** <span style='color:red'>❌ (Red Arrow)</span>
+- **Engine Best:** **Nd4+** <span style='color:green'>✅ (Green Arrow)</span>
+- **Eval Swing:** -509 cp
+- **Variation:** _Nd4+ Kd5 Nxf3 Kc4_
 
 ### Coach Explanation
-The move Nd4+ is a mistake because it allows the Black king to escape to a safer square and doesn't create any significant threat or advantage. The significantly negative evaluation change suggests it likely worsens White's position drastically, perhaps even leading to material loss or a quick checkmate.
+Okay, let's analyze this. Kg1 was a dangerous move here. While you eventually won, the engine assessment is clear: you were lost.
 
-The engine's suggestion, b5, is superior because it creates a passed pawn, forcing the Black king to deal with it. This restricts the king and allows White to potentially make progress and coordinate other pieces to exploit Black's weak pawn structure. The continuation provided shows that the b5 move will let White's Knight fork the King and Bishop.
+Moving the King backwards like that simply allows Black to consolidate their position and press their advantage further. It doesn't create any immediate threats or improve your own position. Stockfish wanted Nd4+ because that forces the King to move and creates active play. It disrupts Black's plan, offers a check, and gives you the chance to trade pieces and create counterplay even while being down material. By playing Kg1, you essentially handed Black a free pass. While it led to a win in the actual game, this was likely due to an error by your opponent, rather than a strategically sound move on your part. This move may have presented some practical difficulties or subtle traps that the opponent failed to appreciate.
+
+In short, Kg1 was passive and let Black dictate the pace, while Nd4+ was active and would have injected some much-needed dynamism into an otherwise dire situation.
 
 
 ---
@@ -118,31 +124,19 @@ The engine's suggestion, b5, is superior because it creates a passed pawn, forci
 
 ![Position](images/2026-02-03_erivera90_vs_estelle_leviosa_moment_7.svg)
 
-**FEN:** `8/8/8/4k3/1P6/5bPp/8/6K1 w - - 0 42`
+**FEN:** `8/8/2N1k3/8/1P4b1/5pPp/8/6K1 w - - 2 40`
 
-- **You Played:** **b5** <span style='color:red'>❌ (Red Arrow)</span>
-- **Engine Best:** **Kf2** <span style='color:green'>✅ (Green Arrow)</span>
-- **Eval Swing:** -2869 cp
-- **Variation:** _Kf2 h2 Ke3 Bd5_
-
-### Coach Explanation
-The move b5 is a terrible mistake because it does absolutely nothing to improve White's situation and walks into a deadly threat. The pawn advance does not create a threat and only serves to make White's position slightly worse, as it now has a weaker pawn structure. Stockfish identifies Kf2 as a better move because it is a waiting move that keeps white alive a bit longer. White is still losing but it prolongs the inevitable compared to b5.
-
-
----
-## Moment 8
-
-![Position](images/2026-02-03_erivera90_vs_estelle_leviosa_moment_8.svg)
-
-**FEN:** `1Q6/8/8/8/8/5bPp/5k1K/8 w - - 1 47`
-
-- **You Played:** **Qb2+** <span style='color:red'>❌ (Red Arrow)</span>
-- **Engine Best:** **Qf4** <span style='color:green'>✅ (Green Arrow)</span>
-- **Eval Swing:** -2651 cp
-- **Variation:** _Qf4 Ke2 Kxh3 Kf2_
+- **You Played:** **Nd4+** <span style='color:red'>❌ (Red Arrow)</span>
+- **Engine Best:** **b5** <span style='color:green'>✅ (Green Arrow)</span>
+- **Eval Swing:** -482 cp
+- **Variation:** _b5 Kd5 Ne7+ Ke4_
 
 ### Coach Explanation
-The player's move Qb2+ is a mistake because it allows the black king to escape to safety, ultimately failing to exploit the check and allowing Black to consolidate. The engine's move Qf4, however, keeps the king under pressure while simultaneously setting up a devastating attack along the f-file. Qf4 forces the king to move, and the continuation highlights the weakness on the h3 square, leading to White's attack breaking through. The player's move is a weak check that ultimately diffuses the attack, whereas the engine's move is a direct attack and aims to weaken the king.
+Okay, let's analyze this. Nd4+ was a mistake. While it looks like an active check, it drastically worsens your position. You were already in trouble, but this makes it much worse. The engine evaluation drops considerably after this move.
+
+The core issue is that Nd4+ allows Black's king to consolidate its position while achieving nothing concrete for White. In essence, you're shuffling your knight into a less effective square while the opponent is improving.
+
+The engine's suggestion, b5, is likely aimed at creating a passed pawn and attempting to generate counterplay by forcing Black to deal with this threat. Even though the engine still sees it as a losing position, it's a *less* losing position than after Nd4+ because it introduces a practical problem for your opponent to solve. Your actual move might have introduced complications or a trap that your opponent missed later, allowing you to win despite being objectively lost.
 
 
 ---
