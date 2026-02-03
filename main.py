@@ -2,6 +2,7 @@ from __future__ import annotations
 import chess
 import chess.pgn
 import chess.engine
+import chess.svg
 import os
 import sys
 import logging
@@ -30,7 +31,8 @@ class CrucialMoment:
     eval_swing: int
     pv_line: str
     explanation: Optional[str] = None
-    image_url: Optional[str] = None
+    image_url: Optional[str] = None # Relative path to saved image
+    svg_content: Optional[str] = None # Raw SVG content
 
 class AnalysisNarrator(ABC):
     """Abstract base class for LLM narrators."""
@@ -173,14 +175,27 @@ class ChessAnalyzer:
                     dummy_board.push(move)
                 pv_line = " ".join(pv_san_list)
 
-                # Image URL
-                # Use Lichess export which is reliable and supports orientation
-                fen_encoded = urllib.parse.quote(board_before.fen())
-                orientation = "white"
-                if hero_color == chess.BLACK:
-                    orientation = "black"
+                # --- Generate SVG with Arrows ---
+                arrows = []
                 
-                image_url = f"https://lichess.org/export/fen.gif?fen={fen_encoded}&color={orientation}"
+                # Arrow for the move played (Mistake) - Red
+                # node.move is the move played
+                arrows.append(chess.svg.Arrow(node.move.from_square, node.move.to_square, color="#d40000cc")) # Red with alpha
+                
+                # Arrow for the best move (Engine) - Green
+                if engine_best_move:
+                    arrows.append(chess.svg.Arrow(engine_best_move.from_square, engine_best_move.to_square, color="#008800cc")) # Green with alpha
+
+                # Orientation: View from Hero's perspective (defaults to White if unknown)
+                orientation = hero_color if hero_color is not None else chess.WHITE
+
+                svg_data = chess.svg.board(
+                    board=board_before, # Show position BEFORE the move
+                    arrows=arrows,
+                    orientation=orientation,
+                    size=400,
+                    coordinates=True
+                )
 
                 moment = CrucialMoment(
                     fen=board_before.fen(),
@@ -190,8 +205,8 @@ class ChessAnalyzer:
                     best_move_uci=engine_best_move_uci,
                     eval_swing=delta,
                     pv_line=pv_line,
-                    explanation=None, # Filled later
-                    image_url=image_url
+                    explanation=None,
+                    svg_content=svg_data # Store SVG content
                 )
                 
                 moments.append(moment)
@@ -203,6 +218,11 @@ def generate_markdown_report(moments: List[CrucialMoment], metadata: Dict[str, s
     """Generates a Markdown report from the analyzed moments."""
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
+    
+    # Create images subdirectory
+    images_dir = os.path.join(output_dir, "images")
+    if not os.path.exists(images_dir):
+        os.makedirs(images_dir)
 
     # Create filename: Date_White_vs_Black.md
     safe_date = metadata['Date'].replace('.', '-')
@@ -223,11 +243,21 @@ def generate_markdown_report(moments: List[CrucialMoment], metadata: Dict[str, s
         f.write(f"Found **{len(moments)}** crucial moments where evaluation dropped significantly.\n\n")
         
         for i, moment in enumerate(moments, 1):
+            # Save SVG to file
+            image_filename = f"{filename.replace('.md', '')}_moment_{i}.svg"
+            image_path = os.path.join(images_dir, image_filename)
+            with open(image_path, "w") as img_file:
+                if moment.svg_content:
+                    img_file.write(moment.svg_content)
+            
+            # Relative path for Markdown
+            relative_image_path = f"images/{image_filename}"
+
             f.write(f"## Moment {i}\n\n")
-            f.write(f"![Position]({moment.image_url})\n\n")
+            f.write(f"![Position]({relative_image_path})\n\n")
             f.write(f"**FEN:** `{moment.fen}`\n\n")
-            f.write(f"- **You Played:** **{moment.move_played_san}** ❌\n")
-            f.write(f"- **Engine Best:** **{moment.best_move_san}** ✅\n")
+            f.write(f"- **You Played:** **{moment.move_played_san}** <span style='color:red'>❌ (Red Arrow)</span>\n")
+            f.write(f"- **Engine Best:** **{moment.best_move_san}** <span style='color:green'>✅ (Green Arrow)</span>\n")
             f.write(f"- **Eval Swing:** {moment.eval_swing} cp\n")
             f.write(f"- **Variation:** _{moment.pv_line}_\n\n")
             f.write(f"### Coach Explanation\n")
