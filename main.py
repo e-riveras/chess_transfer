@@ -39,9 +39,9 @@ class GoogleGeminiNarrator(AnalysisNarrator):
     def __init__(self, api_key: str):
         if not api_key:
             raise ValueError("Google Gemini API Key is missing.")
-        import google.generativeai as genai
-        genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel('gemini-pro')
+        from google import genai
+        self.client = genai.Client(api_key=api_key)
+        self.model_name = 'gemini-2.0-flash'
 
     def explain_mistake(self, moment: CrucialMoment) -> str:
         prompt = (
@@ -56,7 +56,9 @@ class GoogleGeminiNarrator(AnalysisNarrator):
             f"Do NOT calculate variations yourself; trust the engine data provided."
         )
         try:
-            response = self.model.generate_content(prompt)
+            response = self.client.models.generate_content(
+                model=self.model_name, contents=prompt
+            )
             return response.text
         except Exception as e:
             logger.error(f"LLM Generation failed: {e}")
@@ -189,57 +191,61 @@ def generate_markdown_report(moments: List[CrucialMoment], output_file: str = "a
             f.write("---\n")
     logger.info(f"Report generated: {output_file}")
 
+import requests
+
+# ... (imports)
+
+def fetch_latest_game(username: str) -> Optional[str]:
+    """Fetches the latest game PGN for a user from Lichess."""
+    url = f"https://lichess.org/api/games/user/{username}"
+    params = {'max': 1, 'pgnInJson': 'true', 'clocks': 'true'}
+    try:
+        logger.info(f"Fetching latest game for {username} from Lichess...")
+        resp = requests.get(url, params=params)
+        if resp.status_code == 200:
+            return resp.text
+        else:
+            logger.error(f"Failed to fetch game: {resp.status_code}")
+            return None
+    except Exception as e:
+        logger.error(f"Error fetching game: {e}")
+        return None
+
 def main():
     # Configuration
     stockfish_path = os.getenv("STOCKFISH_PATH")
     gemini_key = os.getenv("GEMINI_API_KEY")
-    pgn_file_path = "game.pgn" # Assuming input file name or passed via args
+    lichess_username = os.getenv("LICHESS_USERNAME", "erivera90")
+    pgn_file_path = "game.pgn" 
     
     if len(sys.argv) > 1:
         pgn_file_path = sys.argv[1]
 
     if not stockfish_path or not os.path.exists(stockfish_path):
-        logger.error(f"Stockfish path not found or invalid: {stockfish_path}")
-        logger.error("Please set STOCKFISH_PATH in .env")
-        sys.exit(1)
+        # ... (stockfish check)
 
-    # Initialize Narrator
-    if gemini_key:
-        narrator = GoogleGeminiNarrator(gemini_key)
-    else:
-        logger.warning("GEMINI_API_KEY not set. Using MockNarrator.")
-        narrator = MockNarrator()
+    # ... (narrator init)
 
     # Read PGN
+    pgn_text = ""
     try:
         with open(pgn_file_path, "r") as f:
             pgn_text = f.read()
     except FileNotFoundError:
-        logger.error(f"PGN file not found: {pgn_file_path}")
-        # Create a dummy PGN for testing purposes if none exists
-        logger.info("Creating dummy 'game.pgn' for demonstration...")
-        dummy_pgn = '[Event "Demo"]\n1. e4 e5 2. Nf3 d6 3. Bc4 Bg4 4. Nc3 h6 5. Nxe5 Bxd1 6. Bxf7+ Ke7 7. Nd5#'
+        logger.info(f"PGN file not found: {pgn_file_path}. Attempting to fetch latest game...")
+        pgn_text = fetch_latest_game(lichess_username)
+        
+        if not pgn_text:
+            logger.warning("Could not fetch game. Creating dummy 'game.pgn' for demonstration...")
+            dummy_pgn = '[Event "Demo"]\n1. e4 e5 2. Nf3 d6 3. Bc4 Bg4 4. Nc3 h6 5. Nxe5 Bxd1 6. Bxf7+ Ke7 7. Nd5#'
+            pgn_text = dummy_pgn
+        
+        # Save whatever we got (fetched or dummy)
         with open("game.pgn", "w") as f:
-            f.write(dummy_pgn)
-        pgn_text = dummy_pgn
-        pgn_file_path = "game.pgn"
+            f.write(pgn_text)
 
     # Run Analysis
-    try:
-        with ChessAnalyzer(stockfish_path) as analyzer:
-            logger.info("Starting Engine Analysis...")
-            moments = analyzer.analyze_game(pgn_text)
-            
-            logger.info(f"Engine Analysis complete. Found {len(moments)} moments. Starting LLM narration...")
-            
-            for moment in moments:
-                moment.explanation = narrator.explain_mistake(moment)
-                
-            generate_markdown_report(moments)
-            
-    except Exception as e:
-        logger.exception(f"An unexpected error occurred: {e}")
-        sys.exit(1)
+    # ...
 
 if __name__ == "__main__":
     main()
