@@ -29,7 +29,10 @@ class CrucialMoment:
     best_move_san: str
     best_move_uci: str
     eval_swing: int
+    eval_after: int
     pv_line: str
+    game_result: str
+    hero_color: bool # True=White, False=Black
     explanation: Optional[str] = None
     image_url: Optional[str] = None # Relative path to saved image
     svg_content: Optional[str] = None # Raw SVG content
@@ -50,13 +53,27 @@ class GoogleGeminiNarrator(AnalysisNarrator):
         self.model_name = 'gemini-2.0-flash'
 
     def explain_mistake(self, moment: CrucialMoment) -> str:
+        # Determine extra context
+        context_note = ""
+        
+        # Check for "Winning but Lost Eval" (Practical Trap)
+        # If user WON (1-0 and White OR 0-1 and Black) BUT eval is negative (< -100 cp)
+        user_won = (moment.game_result == "1-0" and moment.hero_color == chess.WHITE) or \
+                   (moment.game_result == "0-1" and moment.hero_color == chess.BLACK)
+        
+        if user_won and moment.eval_after < -100:
+            context_note = "\n**Context:** The user ultimately WON this game, but this move put them in a losing position engine-wise. Frame the commentary as: 'You were objectively lost here, but this move might have set a practical trap or complications that your opponent failed to navigate.'"
+
         prompt = (
             f"You are a chess coach.\n"
             f"Position FEN: {moment.fen}\n"
             f"The player played: {moment.move_played_san}\n"
-            f"Stockfish Evaluation change: {moment.eval_swing} (Negative means bad).\n"
+            f"Stockfish Evaluation change: {moment.eval_swing} centipawns (Negative means bad).\n"
+            f"Current Evaluation: {moment.eval_after} centipawns.\n"
             f"Stockfish suggests the best move was: {moment.best_move_san}\n"
-            f"The continuation following the best move is: {moment.pv_line}\n\n"
+            f"The continuation following the best move is: {moment.pv_line}\n"
+            f"Game Result: {moment.game_result}\n"
+            f"{context_note}\n\n"
             f"Task: Explain briefly and conceptually why the player's move was a mistake and why the engine's recommendation is superior. "
             f"Focus on chess concepts (e.g., 'This hangs the knight,' 'weakens the king side,' 'allows a fork'). "
             f"Do NOT calculate variations yourself; trust the engine data provided."
@@ -116,7 +133,8 @@ class ChessAnalyzer:
             "Black": headers.get("Black", "Unknown"),
             "Date": headers.get("Date", "Unknown"),
             "Event": headers.get("Event", "Unknown"),
-            "Site": headers.get("Site", "Unknown")
+            "Site": headers.get("Site", "Unknown"),
+            "Result": headers.get("Result", "*")
         }
 
         # Determine Hero Color
@@ -165,6 +183,28 @@ class ChessAnalyzer:
             # 3. Calculate Swing
             delta = cp_after - cp_before
             
+            # 4. Smart Filter (Context-Aware Mercy Rule)
+            is_decided_before = abs(cp_before) > 500
+            is_decided_after = abs(cp_after) > 500
+            same_result = (cp_before > 0 and cp_after > 0) or (cp_before < 0 and cp_after < 0)
+
+            # Logic: Skip if game was decided and result didn't flip
+            if is_decided_before and is_decided_after and same_result:
+                # But KEEP if it crosses threshold?
+                # Requirement: "SKIP the analysis ONLY IF: is_decided_before AND is_decided_after AND same_result"
+                # Requirement: "KEEP the analysis IF: The evaluation crosses the threshold"
+                # If delta < -threshold (e.g. -600), does it override the skip?
+                # Example: +900 -> +600 (Delta -300).
+                # Decided (T), Decided (T), Same (T). -> SKIP.
+                # Example: +600 -> +100 (Delta -500).
+                # Decided (T), Decided (F), Same (T). -> KEEP (condition fails).
+                # Example: +200 -> -200 (Delta -400).
+                # Decided (F), Decided (F), Same (F). -> KEEP.
+                
+                # So the simple Skip condition handles all cases correctly EXCEPT if user wants to see "blunders in garbage time".
+                # The user explicitly said: "SKIP... if I was winning and stayed winning... skip it."
+                continue
+
             if delta < -threshold:
                 # PV Line
                 pv_moves = info_before.get("pv", [])
@@ -204,9 +244,12 @@ class ChessAnalyzer:
                     best_move_san=engine_best_move_san,
                     best_move_uci=engine_best_move_uci,
                     eval_swing=delta,
+                    eval_after=cp_after,
                     pv_line=pv_line,
                     explanation=None,
-                    svg_content=svg_data # Store SVG content
+                    svg_content=svg_data, # Store SVG content
+                    game_result=metadata["Result"],
+                    hero_color=hero_color
                 )
                 
                 moments.append(moment)
