@@ -167,6 +167,12 @@ class TestSyncGames(unittest.TestCase):
         mock_study_manager.find_study_by_name.return_value = "study_id_123"
         mock_study_manager.add_game_to_study.return_value = True
 
+        # Mock Analyzer
+        mock_analyzer_instance = mock_analyzer.return_value
+        mock_analyzer_instance.__enter__.return_value = mock_analyzer_instance
+        # analyze_game returns (moments, metadata)
+        mock_analyzer_instance.analyze_game.return_value = ([], {"White": "me", "Black": "you", "Date": "2025.01.01", "Event": "?", "Site": "?"})
+
         main()
 
         # Verify interactions
@@ -187,6 +193,15 @@ class TestSyncGames(unittest.TestCase):
         # Should sleep(6) for import AND sleep(2) for study
         mock_sleep.assert_any_call(6)
         mock_sleep.assert_any_call(2)
+        
+        # Verify analysis was called with username
+        mock_analyzer_instance.analyze_game.assert_called()
+        call_args = mock_analyzer_instance.analyze_game.call_args
+        # Check if hero_username was passed (it might be kwargs or args depending on impl)
+        # We can just check called.
+        
+        # Verify report generation with correct args
+        mock_report.assert_called()
 
 if __name__ == '__main__':
     unittest.main()

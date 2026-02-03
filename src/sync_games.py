@@ -329,12 +329,19 @@ def main():
                 
                 # Run Analysis
                 with ChessAnalyzer(stockfish_path) as analyzer:
-                    moments = analyzer.analyze_game(pgn_to_analyze)
+                    # Pass username to filter blunders
+                    moments, metadata = analyzer.analyze_game(pgn_to_analyze, hero_username=CHESSCOM_USERNAME)
+                    
                     for moment in moments:
                         moment.explanation = narrator.explain_mistake(moment)
                     
-                    generate_markdown_report(moments, output_file="analysis_report.md")
-                    logger.info("Analysis report generated.")
+                    # Ensure analysis directory exists
+                    output_dir = os.path.join(os.path.dirname(__file__), '../analysis')
+                    if not os.path.exists(output_dir):
+                        os.makedirs(output_dir)
+
+                    generate_markdown_report(moments, metadata, output_dir=output_dir)
+                    logger.info("Analysis report generated in analysis/ folder.")
                     
                     # Update history with analyzed ID
                     history["last_analyzed_id"] = id_to_analyze
