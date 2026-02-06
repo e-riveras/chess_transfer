@@ -1,7 +1,17 @@
 import logging
 import os
 import sys
+from pathlib import Path
 from dotenv import load_dotenv
+
+def get_project_root() -> Path:
+    """Returns the project root directory (where run_sync.py lives)."""
+    # Navigate up from src/utils.py to project root
+    return Path(__file__).parent.parent
+
+def get_output_dir(subdir: str = "analysis") -> str:
+    """Returns the path to an output directory within the project root."""
+    return str(get_project_root() / subdir)
 
 def setup_logging():
     """Configures the logging format and level based on environment variables."""

@@ -1,11 +1,11 @@
 import os
 import sys
 import logging
-from src.utils import check_env_var
+from src.utils import check_env_var, get_output_dir
 from src.analysis.engine import ChessAnalyzer
 from src.analysis.narrator import GoogleGeminiNarrator, MockNarrator
 from src.analysis.report import generate_markdown_report
-from src.api.lichess import fetch_latest_game
+from src.api.lichess import fetch_latest_game, get_lichess_client, get_lichess_username
 
 logger = logging.getLogger("chess_transfer")
 
@@ -16,7 +16,17 @@ def run_analysis_pipeline(pgn_file_path: str = "game.pgn"):
     # Configuration
     stockfish_path = check_env_var("STOCKFISH_PATH")
     gemini_key = os.getenv("GEMINI_API_KEY")
-    lichess_username = os.getenv("LICHESS_USERNAME", "erivera90")
+    lichess_token = os.getenv("LICHESS_TOKEN")
+
+    # Get username from API token if available
+    lichess_username = None
+    if lichess_token:
+        client = get_lichess_client(lichess_token)
+        lichess_username = get_lichess_username(client)
+
+    if not lichess_username:
+        logger.warning("Could not determine Lichess username from token. Using fallback.")
+        lichess_username = "unknown"
     
     if not os.path.exists(stockfish_path):
         logger.error(f"Stockfish path not found or invalid: {stockfish_path}")
@@ -64,9 +74,7 @@ def run_analysis_pipeline(pgn_file_path: str = "game.pgn"):
             
             summary = narrator.summarize_game(explanations)
             
-            # Output dir logic? Default to 'analysis' in root
-            root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            output_dir = os.path.join(root_dir, "analysis")
+            output_dir = get_output_dir("analysis")
             
             generate_markdown_report(moments, metadata, output_dir=output_dir, summary=summary)
             

@@ -1,9 +1,8 @@
 import os
-import sys
 import logging
 import time
 from datetime import datetime, timezone
-from src.utils import check_env_var
+from src.utils import check_env_var, get_output_dir
 from src.api.lichess import get_lichess_client, StudyManager, import_game_to_lichess
 from src.api.chesscom import get_chesscom_archives, get_games_from_archive
 from src.data.history import load_history, save_history
@@ -48,7 +47,7 @@ def run_sync_pipeline():
 
     for archive_url in archives:
         logger.info(f"Checking archive: {archive_url}")
-        games = get_games_from_archive(archive_url)
+        games = get_games_from_archive(archive_url, chesscom_username)
         games.reverse()
         
         for game in games:
@@ -173,9 +172,7 @@ def run_sync_pipeline():
                     
                     summary = narrator.summarize_game(explanations)
 
-                    # Output dir logic? Default to 'analysis' in root
-                    root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-                    output_dir = os.path.join(root_dir, "analysis")
+                    output_dir = get_output_dir("analysis")
 
                     generate_markdown_report(moments, metadata, output_dir=output_dir, summary=summary)
                     logger.info("Analysis report generated.")

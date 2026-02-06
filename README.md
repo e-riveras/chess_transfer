@@ -49,7 +49,7 @@ If you forget to create the study, the script will simply skip the "Add to Study
     ```
 4.  Run the script:
     ```bash
-    python src/sync_games.py
+    python run_sync.py
     ```
 
 ## Technologies

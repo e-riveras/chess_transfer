@@ -60,6 +60,39 @@ def get_lichess_client(token: str) -> berserk.Client:
     session = berserk.TokenSession(token)
     return berserk.Client(session=session)
 
+def get_lichess_username(client: berserk.Client) -> Optional[str]:
+    """Gets the authenticated user's username from the API token."""
+    try:
+        account = client.account.get()
+        return account.get('username')
+    except Exception as e:
+        logger.error(f"Failed to get Lichess username: {e}")
+        return None
+
+def fetch_latest_game(username: str) -> Optional[str]:
+    """
+    Fetches the latest game PGN for a Lichess user.
+
+    Args:
+        username: Lichess username to fetch games for.
+
+    Returns:
+        PGN string of the latest game, or None if not found.
+    """
+    url = f"https://lichess.org/api/games/user/{username}?max=1"
+    headers = {'Accept': 'application/x-chess-pgn'}
+    try:
+        resp = requests.get(url, headers=headers)
+        if resp.status_code == 200 and resp.text.strip():
+            logger.info(f"Fetched latest game for {username}")
+            return resp.text.strip()
+        else:
+            logger.warning(f"No games found for {username}")
+            return None
+    except Exception as e:
+        logger.error(f"Error fetching latest game: {e}")
+        return None
+
 def import_game_to_lichess(client: berserk.Client, pgn: str) -> str:
     """
     Imports a PGN to Lichess.
