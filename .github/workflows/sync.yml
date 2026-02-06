@@ -40,7 +40,7 @@ jobs:
           LOG_LEVEL: DEBUG
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          python src/sync_games.py
+          python run_sync.py
 
       - name: Commit and Push History
         if: success()
