@@ -36,6 +36,7 @@ class CrucialMoment:
     explanation: Optional[str] = None
     image_url: Optional[str] = None # Relative path to saved image
     svg_content: Optional[str] = None # Raw SVG content
+    tactical_alert: Optional[str] = None # New field for tactical blunders
 
 class AnalysisNarrator(ABC):
     """Abstract base class for LLM narrators."""
@@ -67,6 +68,16 @@ class GoogleGeminiNarrator(AnalysisNarrator):
         if user_won and moment.eval_after < -100:
             context_note = "\n**Context:** The user ultimately WON this game, but this move put them in a losing position engine-wise. Frame the commentary as: 'You were objectively lost here, but this move might have set a practical trap.'"
 
+        # Tactical Alert Logic for Prompt
+        tactical_instruction = ""
+        if moment.tactical_alert:
+            tactical_instruction = (
+                f"TACTICAL ALERT: {moment.tactical_alert}\n"
+                f"CRITICAL INSTRUCTION: You MUST ignore generic positional advice. "
+                f"Start your response with 'BLUNDER: You hung your [Piece Name]. The opponent can simply take it with [Move].' "
+                f"Do not use soft language."
+            )
+
         prompt = (
             f"You are a strict Chess Coach.\n"
             f"Position FEN: {moment.fen}\n"
@@ -76,12 +87,13 @@ class GoogleGeminiNarrator(AnalysisNarrator):
             f"Stockfish suggests the best move was: {moment.best_move_san}\n"
             f"The continuation following the best move is: {moment.pv_line}\n"
             f"Game Result: {moment.game_result}\n"
-            f"{context_note}\n\n"
+            f"{context_note}\n"
+            f"{tactical_instruction}\n\n"
             f"Task: Explain briefly and conceptually why the player's move was a mistake and why the engine's recommendation is superior.\n"
             f"Constraints:\n"
             f"1. Do NOT use conversational filler (e.g., 'Okay', 'Let's look at', 'In this position').\n"
             f"2. Start the response IMMEDIATELY with the chess concept or the piece name.\n"
-            f"3. Be direct and ruthless. Example: 'f3 is a positional error that weakens the King...'\n"
+            f"3. Be direct and ruthless. Example: 'f3 is a positional error that weakens the King...\n'"
             f"4. Do NOT calculate variations yourself; trust the engine data provided."
         )
         try:
@@ -92,29 +104,6 @@ class GoogleGeminiNarrator(AnalysisNarrator):
         except Exception as e:
             logger.error(f"LLM Generation failed: {e}")
             return "Analysis unavailable due to LLM error."
-
-    def summarize_game(self, explanations: List[str]) -> str:
-        if not explanations:
-            return "No mistakes analyzed, so no summary available."
-            
-        combined_text = "\n".join([f"- {exp}" for exp in explanations])
-        
-        prompt = (
-            f"You are a Chess Coach. Here is the analysis of the user's mistakes in this game:\n"
-            f"{combined_text}\n\n"
-            f"Task: Summarize the user's performance into a section titled '## 3 Key Takeaways'.\n"
-            f"1. Identify the recurring theme of their errors (e.g., 'Passive Piece Play', 'Weakening Pawn Moves').\n"
-            f"2. Provide 3 bullet points of actionable advice for their next game.\n"
-            f"3. Keep it concise and encouraging."
-        )
-        try:
-            response = self.client.models.generate_content(
-                model=self.model_name, contents=prompt
-            )
-            return response.text
-        except Exception as e:
-            logger.error(f"LLM Summary Generation failed: {e}")
-            return "Summary unavailable due to LLM error."
 
 class MockNarrator(AnalysisNarrator):
     """Mock narrator for testing without API keys."""
@@ -233,6 +222,28 @@ class ChessAnalyzer:
                     dummy_board.push(move)
                 pv_line = " ".join(pv_san_list)
 
+                # --- Tactical Alert Logic ---
+                tactical_alert = None
+                
+                # Check opponent's best response to the user's move (refutation)
+                refutation_move = info_after.get("pv", [None])[0]
+                if refutation_move:
+                    if board_after.is_capture(refutation_move):
+                        # What piece is being captured?
+                        # The piece is on the target square of the refutation move
+                        captured_piece = board_after.piece_at(refutation_move.to_square)
+                        
+                        if captured_piece:
+                            piece_name = chess.piece_name(captured_piece.piece_type).title()
+                            # Color check? It should be HERO'S piece being captured.
+                            # board_after.turn is OPPONENT.
+                            # So captured_piece.color should be HERO (mover_color).
+                            
+                            if captured_piece.color == mover_color:
+                                color_name = "White" if mover_color == chess.WHITE else "Black"
+                                square_name = chess.square_name(refutation_move.to_square)
+                                tactical_alert = f"CRITICAL: Your move allowed the opponent to immediately capture your {color_name} {piece_name} on {square_name}."
+
                 # --- Generate SVG with Arrows ---
                 arrows = []
                 # Arrow for the move played (Mistake) - Red
@@ -265,7 +276,8 @@ class ChessAnalyzer:
                     explanation=None,
                     svg_content=svg_data,
                     game_result=metadata["Result"],
-                    hero_color=hero_color
+                    hero_color=hero_color,
+                    tactical_alert=tactical_alert # Pass the alert
                 )
                 
                 moments.append(moment)
@@ -319,6 +331,10 @@ def generate_markdown_report(moments: List[CrucialMoment], metadata: Dict[str, s
             f.write(f"- **Engine Best:** **{moment.best_move_san}** <span style='color:green'>✅ (Green Arrow)</span>\n")
             f.write(f"- **Eval Swing:** {moment.eval_swing} cp\n")
             f.write(f"- **Variation:** _{moment.pv_line}_\n\n")
+            
+            if moment.tactical_alert:
+                f.write(f"> **⚠️ {moment.tactical_alert}**\n\n")
+
             f.write(f"### Coach Explanation\n")
             f.write(f"{moment.explanation}\n\n")
             f.write("---\n")
