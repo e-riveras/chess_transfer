@@ -1,17 +1,14 @@
 """Tests for chess_transfer/book_to_study.py"""
 
-import json
 import tempfile
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 
 from chess_transfer.book_to_study import (
     BookParser,
     NotationParser,
-    LichessStudyUploader,
-    ConfigManager,
 )
 
 
@@ -124,92 +121,7 @@ More descriptive text here.
         games = NotationParser.extract_games(text)
 
         assert len(games) >= 1
-        assert '1.e4' in games[0] or '1.d4' in games[0]
+        # python-chess outputs with space: "1. e4" not "1.e4"
+        assert '1. e4' in games[0] or '1. d4' in games[0]
 
 
-class TestConfigManager:
-    """Tests for ConfigManager class."""
-
-    def test_save_and_load_config(self):
-        """Test saving and loading config."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            config_path = Path(tmpdir) / "test_config.json"
-
-            # Patch the config file path
-            with patch.object(ConfigManager, 'CONFIG_FILE', config_path):
-                ConfigManager.set_study_id("test123")
-                loaded = ConfigManager.get_study_id()
-
-                assert loaded == "test123"
-
-    def test_load_nonexistent_config(self):
-        """Test loading when config file doesn't exist."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            config_path = Path(tmpdir) / "nonexistent.json"
-
-            with patch.object(ConfigManager, 'CONFIG_FILE', config_path):
-                result = ConfigManager.get_study_id()
-                assert result is None
-
-
-class TestLichessStudyUploader:
-    """Tests for LichessStudyUploader class."""
-
-    @patch('chess_transfer.book_to_study.berserk')
-    def test_add_chapters_success(self, mock_berserk):
-        """Test successful chapter upload."""
-        mock_client = MagicMock()
-        mock_berserk.Client.return_value = mock_client
-        mock_berserk.TokenSession.return_value = MagicMock()
-
-        uploader = LichessStudyUploader("fake_token")
-        chapters = [
-            {'title': 'Chapter 1', 'pgn': '1.e4 e5'},
-            {'title': 'Chapter 2', 'pgn': '1.d4 d5'},
-        ]
-
-        result = uploader.add_chapters("study123", chapters, "Test Book")
-
-        assert result == 2
-        assert mock_client.studies.import_pgn.call_count == 2
-
-    @patch('chess_transfer.book_to_study.berserk')
-    def test_add_chapters_partial_failure(self, mock_berserk):
-        """Test handling of partial upload failure."""
-        mock_client = MagicMock()
-        mock_berserk.Client.return_value = mock_client
-        mock_berserk.TokenSession.return_value = MagicMock()
-        mock_berserk.exceptions.ResponseError = Exception
-
-        # First call succeeds, second fails
-        mock_client.studies.import_pgn.side_effect = [
-            None,
-            Exception("API error"),
-        ]
-
-        uploader = LichessStudyUploader("fake_token")
-        chapters = [
-            {'title': 'Chapter 1', 'pgn': '1.e4 e5'},
-            {'title': 'Chapter 2', 'pgn': '1.d4 d5'},
-        ]
-
-        result = uploader.add_chapters("study123", chapters, "Test Book")
-
-        assert result == 1  # Only one succeeded
-
-    @patch('chess_transfer.book_to_study.berserk')
-    def test_chapter_name_truncation(self, mock_berserk):
-        """Test that long chapter names are truncated."""
-        mock_client = MagicMock()
-        mock_berserk.Client.return_value = mock_client
-        mock_berserk.TokenSession.return_value = MagicMock()
-
-        uploader = LichessStudyUploader("fake_token")
-        long_title = "A" * 150
-        chapters = [{'title': long_title, 'pgn': '1.e4 e5'}]
-
-        uploader.add_chapters("study123", chapters, "Book")
-
-        call_args = mock_client.studies.import_pgn.call_args
-        chapter_name = call_args.kwargs.get('chapter_name')
-        assert len(chapter_name) <= 100

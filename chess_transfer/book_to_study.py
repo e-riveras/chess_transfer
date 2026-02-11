@@ -2,20 +2,15 @@
 """
 chess_transfer/book_to_study.py
 
-Convert chess books (PDF/EPUB) to Lichess study chapters with a Targeted Move Hunter strategy.
+Convert chess books (PDF/EPUB) to a PGN file with all chapters and comments extracted.
 """
 
 import argparse
-import json
-import os
 import re
 from pathlib import Path
-from typing import List, Dict, Optional
-
-from dotenv import load_dotenv
+from typing import List, Dict
 
 try:
-    import berserk
     import chess
     import chess.pgn
     from PyPDF2 import PdfReader
@@ -26,9 +21,6 @@ try:
 except ImportError as e:
     DEPS_AVAILABLE = False
     MISSING_DEP = str(e)
-
-# Load environment variables from .env file
-load_dotenv()
 
 
 class BookParser:
@@ -85,7 +77,7 @@ class BookParser:
 
         combined_pattern = f"(?:{'|'.join(patterns)})"
         matches = list(re.finditer(combined_pattern, text, flags=re.MULTILINE))
-        
+
         if not matches:
             return [{'title': 'Full Book', 'content': text}]
 
@@ -102,145 +94,281 @@ class BookParser:
             content = text[header_end:end_pos].strip()
             if len(content) >= min_content_length:
                 chapters.append({'title': title, 'content': content})
-        
+
         return chapters
 
 
 class NotationParser:
-    """Parse chess notation from text with a Targeted Move Hunter strategy."""
+    """
+    Parse chess notation using Stack-Based Tree Builder with Lookahead.
 
-    MOVE_PATTERN = r'(?:\d+\.{1,3}\s*)?(?:[KQRBN]?[a-h1-8]?x?[a-h][1-8](?:=[QRBN])?|O-O-O|O-O|0-0-0|0-0)[+#]?[!?]*'
+    Handles:
+    - Analysis branches that jump back in move numbers
+    - Ambiguous moves legal on multiple branches
+    - Sticky notation (6.Nge2, 11...Ne8)
+    """
 
     @staticmethod
     def extract_lines_from_chapter(text: str, chapter_title: str) -> List[Dict]:
-        """Split a chapter into a preamble and multiple distinct games (Game Slicing)."""
-        import re
-        game_marker_pattern = r'(?P<marker>Game\s+\d+)'
+        """GAME SLICER: Split chapter into Introduction + Game segments."""
+        game_marker_pattern = r'Game\s+(\d+)'
         matches = list(re.finditer(game_marker_pattern, text, flags=re.IGNORECASE))
-        
+
         if not matches:
             return [{'title': chapter_title, 'pgn': NotationParser.text_to_pgn(text, chapter_title)}]
 
         results = []
-        preamble_text = text[:matches[0].start()].strip()
-        if preamble_text and len(preamble_text) > 50:
+        intro_text = text[:matches[0].start()].strip()
+        if intro_text:
             results.append({
                 'title': f"{chapter_title} - Introduction",
-                'pgn': NotationParser.text_to_pgn(preamble_text, f"{chapter_title} - Introduction", is_preamble=True)
+                'pgn': NotationParser.text_to_pgn(intro_text, f"{chapter_title} - Introduction")
             })
 
-        for i in range(len(matches)):
-            start_pos = matches[i].start()
-            end_pos = matches[i+1].start() if i + 1 < len(matches) else len(text)
+        for i, match in enumerate(matches):
+            game_num = match.group(1)
+            start_pos = match.start()
+            end_pos = matches[i + 1].start() if i + 1 < len(matches) else len(text)
             segment_text = text[start_pos:end_pos].strip()
-            marker_line = text[matches[i].start():matches[i].end()].strip()
-            
-            pgn = NotationParser.text_to_pgn(segment_text, f"{chapter_title} - {marker_line}")
-            results.append({'title': f"{chapter_title} - {marker_line}", 'pgn': pgn})
+            title = f"{chapter_title} - Game {game_num}"
+            results.append({'title': title, 'pgn': NotationParser.text_to_pgn(segment_text, title)})
 
         return results
 
     @staticmethod
-    def text_to_pgn(text: str, chapter_title: str, is_preamble: bool = False) -> str:
+    def text_to_pgn(text: str, chapter_title: str) -> str:
         """
-        Targeted Move Hunter Loop.
-        Iteratively searches for the specific next sequential move in the main line.
-        """
-        import re
-        import chess
-        import chess.pgn
+        Stack-Based Tree Builder with Lookahead.
 
+        Algorithm:
+        1. Tokenize text into Move tokens and Text tokens (Sticky Regex)
+        2. For each Move token, find ALL valid parent nodes in the tree
+        3. Use 1-step lookahead to disambiguate when multiple parents valid
+        4. Attach move to correct parent, building proper variation tree
+        """
+
+        # =====================================================
+        # TOKEN CLASSES
+        # =====================================================
+        class MoveToken:
+            __slots__ = ['move_num', 'is_black', 'san', 'original']
+            def __init__(self, move_num: int, is_black: bool, san: str, original: str):
+                self.move_num = move_num
+                self.is_black = is_black
+                self.san = san
+                self.original = original
+
+        class TextToken:
+            __slots__ = ['text']
+            def __init__(self, text: str):
+                self.text = text
+
+        # =====================================================
+        # TOKENIZER (Sticky Regex)
+        # =====================================================
+        def tokenize(raw_text: str) -> list:
+            """Convert text to list of MoveToken and TextToken."""
+            tokens = []
+
+            # Sticky pattern: handles "6.Nge2", "11...Ne8", "7.0-0"
+            explicit_move = re.compile(
+                r'(\d+)(\.{1,3})\s*'
+                r'([KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](?:=[QRBN])?[+#]?|O-O-O|O-O|0-0-0|0-0)'
+                r'([!?]*)'
+            )
+
+            # Raw SAN for implicit Black moves: "1.e4 e5"
+            raw_san = re.compile(
+                r'([KQRBN][a-h]?[1-8]?x?[a-h][1-8](?:=[QRBN])?[+#]?|'
+                r'[a-h]x[a-h][1-8](?:=[QRBN])?[+#]?|'
+                r'[a-h][1-8](?:=[QRBN])?[+#]?|'
+                r'O-O-O|O-O|0-0-0|0-0)([!?]*)'
+            )
+
+            pos = 0
+            last_move_num = 0
+            last_was_white = False
+
+            while pos < len(raw_text):
+                # Try explicit move first
+                m = explicit_move.match(raw_text, pos)
+                if m:
+                    move_num = int(m.group(1))
+                    dots = m.group(2)
+                    san = m.group(3).replace('0-0-0', 'O-O-O').replace('0-0', 'O-O')
+                    ann = m.group(4) or ''
+                    is_black = len(dots) > 1
+
+                    tokens.append(MoveToken(move_num, is_black, san + ann, m.group(0)))
+                    last_move_num = move_num
+                    last_was_white = not is_black
+                    pos = m.end()
+                    continue
+
+                # Try raw SAN (implicit Black after White)
+                if last_was_white:
+                    ws_match = re.match(r'\s{0,10}', raw_text[pos:])
+                    ws_end = pos + (ws_match.end() if ws_match else 0)
+                    if not re.match(r'\d+\.', raw_text[ws_end:]):
+                        san_m = raw_san.match(raw_text, ws_end)
+                        if san_m:
+                            san = san_m.group(1).replace('0-0-0', 'O-O-O').replace('0-0', 'O-O')
+                            ann = san_m.group(2) or ''
+                            tokens.append(MoveToken(last_move_num, True, san + ann, san_m.group(0)))
+                            last_was_white = False
+                            pos = san_m.end()
+                            continue
+
+                # No move - collect text until next move
+                next_move = explicit_move.search(raw_text, pos)
+                if next_move:
+                    text_content = raw_text[pos:next_move.start()]
+                    if text_content.strip():
+                        tokens.append(TextToken(text_content.strip()))
+                    pos = next_move.start()
+                    last_was_white = False
+                else:
+                    text_content = raw_text[pos:]
+                    if text_content.strip():
+                        tokens.append(TextToken(text_content.strip()))
+                    break
+
+            return tokens
+
+        # =====================================================
+        # BUILD THE TREE
+        # =====================================================
         game = chess.pgn.Game()
         game.headers["Event"] = chapter_title
         game.headers["Site"] = "Chess Book"
+        game.headers["White"] = "Study"
+        game.headers["Black"] = "Analysis"
         game.headers["Result"] = "*"
 
-        if is_preamble:
-            game.headers["White"] = "Study"; game.headers["Black"] = "Introduction"
-            game.comment = re.sub(r'\s+', ' ', text.replace('{', '(').replace('}', ')')).strip()
-            return str(game)
+        # Try to extract player names
+        header_match = re.search(r'Game\s+\d+\s+([A-Za-z]+)\s*[-–]\s*([A-Za-z]+)', text)
+        if header_match:
+            game.headers["White"] = header_match.group(1).strip()
+            game.headers["Black"] = header_match.group(2).strip()
 
-        # Header Extraction
-        header_pattern = r'Game\s+\d+\s+(?P<white>[^-]+)-(?P<black>[^\s]+)\s+(?P<location>.*?)(?P<year>\d{4})'
-        match = re.search(header_pattern, text, flags=re.IGNORECASE)
-        if match:
-            game.headers["White"] = match.group('white').strip()
-            game.headers["Black"] = match.group('black').strip()
-            game.headers["Date"] = f"{match.group('year')}.??.??"
-            text = text[match.end():].strip()
-        else:
-            game.headers["White"] = "Study"; game.headers["Black"] = "Analysis"
-
-        board = chess.Board()
+        # Node registry: all nodes for finding valid parents
+        node_registry: List[chess.pgn.GameNode] = [game]
+        main_line_leaf = game
         current_node = game
-        pos = 0
-        
-        while pos < len(text):
-            move_num = board.fullmove_number
-            turn = board.turn
-            
-            found_match = None
-            # SCAN FOR TARGET
-            for m in re.finditer(rf'({NotationParser.MOVE_PATTERN})', text[pos:]):
-                token = m.group(0).strip()
-                comp = re.match(r'(?P<num>\d+)?(?P<dots>\.{1,3})?\s*(?P<san>.*)', token)
-                c_num = int(comp.group('num')) if comp.group('num') else None
-                c_dots = comp.group('dots')
-                c_is_black = c_dots and len(c_dots) > 1
-                c_san = comp.group('san').strip().replace('0-0-0', 'O-O-O').replace('0-0', 'O-O')
-                c_san = re.sub(r'^[\d\.]+', '', c_san).strip()
 
-                # Step 1: Target Signature Check
-                is_target_sig = False
-                if turn == chess.WHITE:
-                    # White move: Must match number, must not have dots
-                    if c_num == move_num and not c_is_black:
-                        is_target_sig = True
-                else: # Black
-                    # Black move: Correct number with dots OR no number
-                    if (c_num == move_num and c_is_black) or (c_num is None):
-                        is_target_sig = True
-                
-                if is_target_sig:
-                    try:
-                        # Step 3: Legality Check
-                        move = board.parse_san(c_san)
-                        
-                        # Anti-Confusion: If Black raw SAN, don't jump over other move numbers
-                        if turn == chess.BLACK and c_num is None:
-                            skipped = text[pos : pos + m.start()]
-                            if re.search(r'\d+\.', skipped):
-                                continue # This move belongs to a different turn
-                        
-                        found_match = (m, move)
-                        break
-                    except:
-                        pass # Move not legal or invalid SAN
-            
-            if found_match:
-                m, move = found_match
-                # Step 3: Execute & Advance
-                match_start = pos + m.start()
-                match_end = pos + m.end()
-                
-                # Capture Comment
-                comment = text[pos:match_start].strip()
-                if comment:
-                    comment = re.sub(r'\s+', ' ', comment.replace('{', '(').replace('}', ')'))
+        # Tokenize
+        tokens = tokenize(text)
+
+        # Process each token
+        for token_idx, token in enumerate(tokens):
+            if isinstance(token, TextToken):
+                comment = re.sub(r'\s+', ' ', token.text)
+                comment = comment.replace('{', '(').replace('}', ')')
+                if len(comment) < 3000:
                     current_node.comment = (current_node.comment + " " + comment).strip()
-                
-                current_node = current_node.add_main_variation(move)
-                board.push(move)
-                pos = match_end
-            else:
-                # Target not found in remaining text
-                break
-        
-        # Add remaining text as final comment
-        remaining = text[pos:].strip()
-        if remaining:
-            remaining = re.sub(r'\s+', ' ', remaining.replace('{', '(').replace('}', ')'))
-            current_node.comment = (current_node.comment + " " + remaining).strip()
+
+            elif isinstance(token, MoveToken):
+                san_clean = re.sub(r'[!?]+$', '', token.san)
+                expected_turn = chess.BLACK if token.is_black else chess.WHITE
+
+                # =====================================================
+                # STEP 1: Find ALL valid parent nodes
+                # =====================================================
+                valid_parents = []
+                for node in node_registry:
+                    board = node.board()
+                    if board.fullmove_number == token.move_num and board.turn == expected_turn:
+                        try:
+                            move = board.parse_san(san_clean)
+                            valid_parents.append((node, move))
+                        except (chess.InvalidMoveError, chess.IllegalMoveError, chess.AmbiguousMoveError):
+                            pass
+
+                if len(valid_parents) == 0:
+                    continue
+
+                elif len(valid_parents) == 1:
+                    parent_node, move = valid_parents[0]
+
+                else:
+                    # =====================================================
+                    # STEP 2: Disambiguate - Prefer Current Branch
+                    # =====================================================
+                    current_branch_match = None
+                    for pnode, pmove in valid_parents:
+                        if pnode == current_node:
+                            current_branch_match = (pnode, pmove)
+                            break
+
+                    if current_branch_match:
+                        parent_node, move = current_branch_match
+                    else:
+                        # Use lookahead to disambiguate
+                        next_move_token = None
+                        for future_idx in range(token_idx + 1, len(tokens)):
+                            if isinstance(tokens[future_idx], MoveToken):
+                                next_move_token = tokens[future_idx]
+                                break
+
+                        chosen = None
+                        if next_move_token:
+                            next_turn = chess.BLACK if next_move_token.is_black else chess.WHITE
+                            next_san = re.sub(r'[!?]+$', '', next_move_token.san)
+
+                            # First check main_line_leaf
+                            for pnode, pmove in valid_parents:
+                                if pnode == main_line_leaf:
+                                    test_board = pnode.board().copy()
+                                    test_board.push(pmove)
+                                    if test_board.fullmove_number == next_move_token.move_num and test_board.turn == next_turn:
+                                        try:
+                                            test_board.parse_san(next_san)
+                                            chosen = (pnode, pmove)
+                                            break
+                                        except:
+                                            pass
+
+                            # Then check others
+                            if not chosen:
+                                for pnode, pmove in valid_parents:
+                                    test_board = pnode.board().copy()
+                                    test_board.push(pmove)
+                                    if test_board.fullmove_number == next_move_token.move_num and test_board.turn == next_turn:
+                                        try:
+                                            test_board.parse_san(next_san)
+                                            chosen = (pnode, pmove)
+                                            break
+                                        except:
+                                            pass
+
+                        if chosen:
+                            parent_node, move = chosen
+                        else:
+                            parent_node, move = valid_parents[0]
+                            for pnode, pmove in valid_parents:
+                                if pnode == main_line_leaf:
+                                    parent_node, move = pnode, pmove
+                                    break
+
+                # =====================================================
+                # STEP 3: Attach Move
+                # =====================================================
+                existing = None
+                for var in parent_node.variations:
+                    if var.move == move:
+                        existing = var
+                        break
+
+                if existing:
+                    new_node = existing
+                else:
+                    new_node = parent_node.add_variation(move)
+                    node_registry.append(new_node)
+
+                if parent_node == main_line_leaf:
+                    main_line_leaf = new_node
+
+                current_node = new_node
 
         return str(game)
 
@@ -250,92 +378,24 @@ class NotationParser:
         return [NotationParser.text_to_pgn(text, "Extracted Game")]
 
 
-class LichessStudyUploader:
-    """Upload chapters to Lichess study using berserk API."""
-
-    def __init__(self, api_token: str):
-        self.session = berserk.TokenSession(api_token)
-        self.client = berserk.Client(session=self.session)
-
-    def clear_chapters(self, study_id: str) -> int:
-        """Delete all chapters except the first one."""
-        import requests
-        print(f"Clearing chapters for study {study_id}...")
-        r = requests.get(f"https://lichess.org/api/study/{study_id}.pgn")
-        if r.status_code != 200: return 0
-        chapter_ids = re.findall(rf"study/{study_id}/(\w+)", r.text)
-        if not chapter_ids: return 0
-        to_delete = chapter_ids[1:]
-        deleted_count = 0
-        for chapter_id in to_delete:
-            dr = requests.delete(f"https://lichess.org/api/study/{study_id}/{chapter_id}", 
-                                headers={"Authorization": f"Bearer {self.session.token}"})
-            if dr.status_code == 204: deleted_count += 1
-        print(f"   Successfully deleted {deleted_count} chapters.")
-        return deleted_count
-
-    def add_chapters(self, study_id: str, chapters: List[Dict], book_name: str) -> int:
-        """Add chapters to existing Lichess study with rate limiting."""
-        import time
-        MAX_CHAPTERS = 64
-        if len(chapters) > MAX_CHAPTERS:
-            print(f"Warning: Truncating to {MAX_CHAPTERS} chapters.")
-            chapters = chapters[:MAX_CHAPTERS]
-
-        print(f"\nUploading to study {study_id}...")
-        success_count = 0
-        for i, chapter in enumerate(chapters, 1):
-            name = f"{book_name} - {chapter['title']}"[:100]
-            try:
-                self.client.studies.import_pgn(study_id=study_id, chapter_name=name, pgn=chapter['pgn'])
-                print(f"   [OK] [{i}/{len(chapters)}] {name}")
-                success_count += 1
-                time.sleep(1.0)
-            except Exception as e:
-                print(f"   [FAIL] {name}: {e}")
-                if "429" in str(e): time.sleep(60)
-        return success_count
-
-
-class ConfigManager:
-    """Manage configuration like saved study IDs."""
-    CONFIG_FILE = Path.home() / ".chess_transfer_config.json"
-    @classmethod
-    def load(cls) -> dict:
-        if cls.CONFIG_FILE.exists():
-            with open(cls.CONFIG_FILE) as f: return json.load(f)
-        return {}
-    @classmethod
-    def get_study_id(cls) -> Optional[str]: return cls.load().get('default_study_id')
-    @classmethod
-    def set_study_id(cls, study_id: str):
-        config = cls.load(); config['default_study_id'] = study_id
-        with open(cls.CONFIG_FILE, 'w') as f: json.dump(config, f, indent=2)
-
-
 def main():
-    parser = argparse.ArgumentParser(description='Convert chess books to Lichess study chapters')
+    parser = argparse.ArgumentParser(description='Convert chess books to PGN')
     parser.add_argument('--pdf', help='Path to PDF file')
     parser.add_argument('--epub', help='Path to EPUB file')
-    parser.add_argument('--study-id', help='Lichess study ID')
-    parser.add_argument('--token', help='Lichess API token')
-    parser.add_argument('--book-name', help='Name for the book')
-    parser.add_argument('--save-study', action='store_true', help='Save study ID')
-    parser.add_argument('--dry-run', action='store_true', help='Parse only')
-    parser.add_argument('--debug', action='store_true', help='Show debug text')
-    parser.add_argument('--clear', action='store_true', help='Clear existing chapters')
+    parser.add_argument('--output', help='Output PGN file path (default: <book_name>.pgn)')
+    parser.add_argument('--book-name', help='Name for the book (used in chapter headers)')
+    parser.add_argument('--dry-run', action='store_true', help='Parse only, print first 5 chapters')
 
     args = parser.parse_args()
-    if not (args.pdf or args.epub): parser.error("Provide --pdf or --epub")
-    
-    study_id = args.study_id or ConfigManager.get_study_id()
-    token = args.token or os.getenv('LICHESS_TOKEN')
-    if args.save_study and study_id: ConfigManager.set_study_id(study_id)
+    if not (args.pdf or args.epub):
+        parser.error("Provide --pdf or --epub")
+
+    book_path = args.pdf or args.epub
+    book_name = args.book_name or Path(book_path).stem
 
     print("Parsing book...")
-    book_path = args.pdf or args.epub
     text = BookParser.parse_pdf(args.pdf) if args.pdf else BookParser.parse_epub(args.epub)
-    
+
     print("\nExtracting chapters and games...")
     raw_chapters = BookParser.extract_chapters(text)
     chapters = []
@@ -347,9 +407,23 @@ def main():
             print(f"\n[{i}] {ch['title']}\n{ch['pgn'][:500]}...")
         return 0
 
-    uploader = LichessStudyUploader(token)
-    if args.clear: uploader.clear_chapters(study_id)
-    uploader.add_chapters(study_id, chapters, args.book_name or Path(book_path).stem)
+    output_path = args.output or f"{book_name}.pgn"
+    print(f"\nWriting {len(chapters)} chapters to {output_path}...")
+    with open(output_path, 'w', encoding='utf-8') as f:
+        for i, chapter in enumerate(chapters):
+            name = f"{book_name} - {chapter['title']}"[:100]
+            # Inject the chapter name into the Event header
+            pgn = chapter['pgn'].replace(
+                f'[Event "{chapter["title"]}"]',
+                f'[Event "{name}"]',
+                1
+            )
+            f.write(pgn)
+            f.write("\n\n")
+            print(f"   [{i+1}/{len(chapters)}] {name}")
+
+    print(f"\nDone. PGN written to {output_path}")
+    return 0
 
 
 if __name__ == '__main__':
