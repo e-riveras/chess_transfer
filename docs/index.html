@@ -76,6 +76,7 @@
         .chess-board {
             display: grid;
             grid-template-columns: repeat(8, 1fr);
+            grid-template-rows: repeat(8, 1fr);
             width: 100%;
             max-width: 400px;
             aspect-ratio: 1;
@@ -361,8 +362,7 @@ class ChessBoard {
 
     makeMove(moveSan) {
         // Parse SAN and update board state
-        // Simplified engine: trusts PGN usually, but needs to find piece for "Nf3"
-        // Returns information about the move for highlighting { from: {r,c}, to: {r,c} }
+        // Improved logic: Trust PGN but verify candidates
         
         const cleanSan = moveSan.replace(/[+#?!]/g, '');
         let move = null;
@@ -382,7 +382,6 @@ class ChessBoard {
             };
         } else {
             // Normal move
-            // Parse destination
             const match = cleanSan.match(/([KQRBN])?([a-h])?([1-8])?x?([a-h][1-8])(=[QRBN])?/);
             if (!match) return null; // Parse error
 
@@ -394,20 +393,17 @@ class ChessBoard {
 
             const { row: toRow, col: toCol } = getSquareCoords(dest);
             
-            // Find the piece
+            // Find all potential pieces
             const candidates = [];
             for (let r = 0; r < 8; r++) {
                 for (let c = 0; c < 8; c++) {
                     const p = this.board[r][c];
                     if (p && p.color === this.turn && p.type === (pieceType === 'P' ? 'p' : pieceType.toLowerCase())) {
-                        // Check if piece matches disambiguation
+                        // Check disambiguation constraints
                         if (fromFile && FILES[c] !== fromFile) continue;
                         if (fromRank && RANKS[7-r] !== fromRank) continue;
                         
-                        // Check if piece can legally move there (simplified)
-                        if (this.canMove(r, c, toRow, toCol, p.type, pieceType === 'P' && cleanSan.includes('x'))) {
-                            candidates.push({ row: r, col: c });
-                        }
+                        candidates.push({ row: r, col: c });
                     }
                 }
             }
@@ -416,8 +412,26 @@ class ChessBoard {
                 console.error(`No candidate found for move ${moveSan} on turn ${this.turn}`);
                 return null;
             }
-            // If multiple, basic logic (usually disambiguation handles it, or first valid)
-            const from = candidates[0]; 
+
+            let from = null;
+
+            if (candidates.length === 1) {
+                from = candidates[0];
+            } else {
+                // Disambiguate by checking legality
+                const legalCandidates = candidates.filter(c => 
+                    this.canMove(c.row, c.col, toRow, toCol, pieceType, cleanSan.includes('x'))
+                );
+                
+                if (legalCandidates.length > 0) {
+                    from = legalCandidates[0]; // Pick first legal one
+                } else {
+                    // Fallback: PGN implies one is valid, even if our logic missed it. 
+                    // Pick the first candidate matching constraints.
+                    from = candidates[0];
+                }
+            }
+            
             move = { from, to: { row: toRow, col: toCol }, promotion };
         }
 
@@ -452,16 +466,13 @@ class ChessBoard {
         });
     }
 
-    // Simplified Move Validator
+    // Move Validator (Geometry Only)
     canMove(r1, c1, r2, c2, type, isCapture) {
-        // Very basic checks to filter obviously wrong pieces (like a knight on the other side of board)
-        // Does NOT check for pins, checks, etc. (Simplified per requirements)
-        
         const dr = r2 - r1;
         const dc = c2 - c1;
         const absDr = Math.abs(dr);
         const absDc = Math.abs(dc);
-        const color = this.turn; // 'w' moves up (row index decreases), 'b' moves down
+        const color = this.turn;
 
         type = type.toUpperCase();
 
@@ -487,14 +498,14 @@ class ChessBoard {
             const direction = color === 'w' ? -1 : 1;
             const startRow = color === 'w' ? 6 : 1;
             
-            if (c1 === c2 && !isCapture) {
-                // Move forward 1
+            // Forward
+            if (c1 === c2) {
                 if (dr === direction) return true;
-                // Move forward 2
                 if (r1 === startRow && dr === 2 * direction && this.isPathClear(r1, c1, r2, c2)) return true;
-            } else if (Math.abs(c1 - c2) === 1 && dr === direction) {
-                // Capture (diagonal)
-                // Note: En passant logic omitted for brevity in "Simplified"
+                return false;
+            } 
+            // Capture (Diagonal)
+            if (Math.abs(c1 - c2) === 1 && dr === direction) {
                 return true; 
             }
             return false;
