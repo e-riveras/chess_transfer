@@ -1,0 +1,1071 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chess Book Reader</title>
+    <style>
+        :root {
+            --bg-color: #1a1a1a;
+            --text-color: #e0e0e0;
+            --card-bg: #2a2a2a;
+            --accent-color: #4a9eff;
+            --board-light: #f0d9b5;
+            --board-dark: #b58863;
+            --highlight-color: rgba(74, 158, 255, 0.5);
+            --comment-color: #a0a0a0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        h1, h2, h3 {
+            margin: 0.5em 0;
+            text-align: center;
+        }
+
+        .container {
+            max-width: 800px;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        /* Header & Input */
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .file-input-container {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+        
+        input[type="file"] {
+            background: var(--card-bg);
+            padding: 10px;
+            border-radius: 5px;
+            color: var(--text-color);
+        }
+
+        /* Board */
+        .board-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            position: sticky;
+            top: 20px;
+            z-index: 100;
+            background: var(--bg-color);
+            padding: 10px 0;
+            border-bottom: 1px solid var(--card-bg);
+        }
+
+        .chess-board {
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            width: 100%;
+            max-width: 400px;
+            aspect-ratio: 1;
+            border: 5px solid #4a3020;
+            user-select: none;
+        }
+
+        .square {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 2.5rem; /* Adjust based on square size */
+            cursor: pointer;
+            position: relative;
+        }
+
+        .square.light { background-color: var(--board-light); color: black; }
+        .square.dark { background-color: var(--board-dark); color: black; }
+        .square.highlight { box-shadow: inset 0 0 0 4px var(--accent-color); }
+        .square.last-move { background-color: var(--highlight-color) !important; }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        button {
+            background: var(--card-bg);
+            color: var(--text-color);
+            border: 1px solid var(--accent-color);
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: background 0.2s;
+        }
+
+        button:hover {
+            background: var(--accent-color);
+            color: #fff;
+        }
+
+        button:disabled {
+            border-color: #555;
+            color: #555;
+            cursor: not-allowed;
+            background: var(--bg-color);
+        }
+
+        /* Game Info */
+        .game-info {
+            background: var(--card-bg);
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+        
+        .game-meta {
+            font-size: 0.9rem;
+            color: var(--comment-color);
+            margin-bottom: 5px;
+        }
+
+        /* Moves List */
+        .moves-container {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            padding-bottom: 50px;
+        }
+
+        .move-pair {
+            background: var(--card-bg);
+            padding: 15px;
+            border-radius: 8px;
+            display: grid;
+            grid-template-columns: 40px 1fr;
+            gap: 10px;
+            border-left: 4px solid transparent;
+            transition: background-color 0.2s;
+        }
+        
+        .move-pair.active {
+            border-left-color: var(--accent-color);
+            background-color: #333;
+        }
+
+        .move-number {
+            font-weight: bold;
+            color: var(--accent-color);
+            font-size: 1.1rem;
+            text-align: right;
+            padding-right: 5px;
+        }
+
+        .ply-container {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .ply-header {
+            display: flex;
+            align-items: baseline;
+            gap: 10px;
+        }
+
+        .move-text {
+            font-family: monospace;
+            font-size: 1.1rem;
+            font-weight: bold;
+            cursor: pointer;
+            padding: 2px 5px;
+            border-radius: 3px;
+        }
+
+        .move-text:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+        
+        .move-text.current {
+            background-color: var(--accent-color);
+            color: white;
+        }
+
+        .comment {
+            color: var(--comment-color);
+            font-style: italic;
+            margin-left: 10px;
+            font-size: 0.95rem;
+            line-height: 1.5;
+            white-space: pre-wrap;
+        }
+
+        .variations {
+            margin-top: 5px;
+            margin-left: 10px;
+            padding-left: 10px;
+            border-left: 2px solid #555;
+            font-size: 0.9rem;
+        }
+
+        .variation-line {
+            margin-bottom: 4px;
+            color: #aaa;
+        }
+        
+        .variation-move {
+            cursor: pointer;
+            color: var(--accent-color);
+            margin: 0 2px;
+        }
+        
+        .variation-move:hover {
+            text-decoration: underline;
+        }
+
+        /* Responsive */
+        @media (max-width: 600px) {
+            .chess-board {
+                max-width: 100%;
+            }
+            .square {
+                font-size: 1.8rem;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        <h1>Chess Book Reader</h1>
+        <div class="file-input-container">
+            <input type="file" id="pgnInput" accept=".pgn">
+        </div>
+        <div id="game-selector" style="display:none; margin-top:10px;">
+            <label>Select Game: 
+                <select id="gameSelect"></select>
+            </label>
+        </div>
+    </div>
+
+    <div class="board-container">
+        <div class="game-info" id="gameMetadata" style="display:none; width: 100%; box-sizing: border-box;">
+            <h2 id="gameTitle">Title</h2>
+            <div class="game-meta" id="gamePlayers">White vs Black</div>
+            <div class="game-meta" id="gameEvent">Event, Date</div>
+        </div>
+
+        <div id="board" class="chess-board">
+            <!-- Squares generated by JS -->
+        </div>
+
+        <div class="controls">
+            <button id="btnStart" title="Go to Start">⏮</button>
+            <button id="btnPrev" title="Previous Move">◀</button>
+            <button id="btnNext" title="Next Move">▶</button>
+            <button id="btnFlip" title="Flip Board">🔁</button>
+        </div>
+    </div>
+
+    <div id="movesList" class="moves-container">
+        <!-- Moves generated by JS -->
+        <div class="game-info" style="text-align: center; color: #777;">
+            Upload a PGN file to start reading.
+        </div>
+    </div>
+</div>
+
+<script>
+/**
+ * Chess Logic & PGN Parser
+ */
+
+// --- Constants & Utils ---
+// Use filled glyphs for both sides to allow coloring via CSS
+const PIECES = {
+    'w': { 'P': '♟', 'N': '♞', 'B': '♝', 'R': '♜', 'Q': '♛', 'K': '♚' },
+    'b': { 'p': '♟', 'n': '♞', 'b': '♝', 'r': '♜', 'q': '♛', 'k': '♚' }
+};
+
+const FILES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+const RANKS = ['1', '2', '3', '4', '5', '6', '7', '8'];
+
+function getSquareName(row, col) {
+    return FILES[col] + RANKS[7 - row];
+}
+
+function getSquareCoords(squareName) {
+    const col = FILES.indexOf(squareName[0]);
+    const row = 7 - RANKS.indexOf(squareName[1]);
+    return { row, col };
+}
+
+// --- Chess Board State ---
+class ChessBoard {
+    constructor() {
+        this.board = Array(8).fill(null).map(() => Array(8).fill(null));
+        this.turn = 'w';
+        this.castling = { w: { K: true, Q: true }, b: { k: true, q: true } };
+        this.enPassant = null; // target square coords {row, col}
+        this.halfMoveClock = 0;
+        this.fullMoveNumber = 1;
+        this.reset();
+    }
+
+    reset() {
+        // Standard starting position
+        const setupRow = (row, color, pieces) => {
+            pieces.split('').forEach((p, col) => {
+                this.board[row][col] = { color, type: p };
+            });
+        };
+
+        this.board = Array(8).fill(null).map(() => Array(8).fill(null));
+        setupRow(0, 'b', 'rnbqkbnr');
+        setupRow(1, 'b', 'pppppppp');
+        setupRow(6, 'w', 'PPPPPPPP');
+        setupRow(7, 'w', 'RNBQKBNR');
+
+        this.turn = 'w';
+        this.castling = { w: { K: true, Q: true }, b: { k: true, q: true } };
+        this.enPassant = null;
+    }
+
+    clone() {
+        const newBoard = new ChessBoard();
+        newBoard.board = this.board.map(row => row.map(p => p ? { ...p } : null));
+        newBoard.turn = this.turn;
+        newBoard.castling = JSON.parse(JSON.stringify(this.castling));
+        newBoard.enPassant = this.enPassant;
+        return newBoard;
+    }
+
+    getPiece(row, col) {
+        if (row < 0 || row > 7 || col < 0 || col > 7) return null;
+        return this.board[row][col];
+    }
+
+    makeMove(moveSan) {
+        // Parse SAN and update board state
+        // Simplified engine: trusts PGN usually, but needs to find piece for "Nf3"
+        // Returns information about the move for highlighting { from: {r,c}, to: {r,c} }
+        
+        const cleanSan = moveSan.replace(/[+#?!]/g, '');
+        let move = null;
+
+        // 1. Castle
+        if (cleanSan === 'O-O' || cleanSan === '0-0') {
+            const row = this.turn === 'w' ? 7 : 0;
+            move = { 
+                from: { row, col: 4 }, to: { row, col: 6 }, 
+                isCastle: true, rookFrom: { row, col: 7 }, rookTo: { row, col: 5 } 
+            };
+        } else if (cleanSan === 'O-O-O' || cleanSan === '0-0-0') {
+            const row = this.turn === 'w' ? 7 : 0;
+            move = { 
+                from: { row, col: 4 }, to: { row, col: 2 }, 
+                isCastle: true, rookFrom: { row, col: 0 }, rookTo: { row, col: 3 } 
+            };
+        } else {
+            // Normal move
+            // Parse destination
+            const match = cleanSan.match(/([KQRBN])?([a-h])?([1-8])?x?([a-h][1-8])(=[QRBN])?/);
+            if (!match) return null; // Parse error
+
+            const pieceType = match[1] || 'P'; // Default to Pawn if no letter
+            const fromFile = match[2];
+            const fromRank = match[3];
+            const dest = match[4];
+            const promotion = match[5] ? match[5][1] : null;
+
+            const { row: toRow, col: toCol } = getSquareCoords(dest);
+            
+            // Find the piece
+            const candidates = [];
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    const p = this.board[r][c];
+                    if (p && p.color === this.turn && p.type === (pieceType === 'P' ? 'p' : pieceType.toLowerCase())) {
+                        // Check if piece matches disambiguation
+                        if (fromFile && FILES[c] !== fromFile) continue;
+                        if (fromRank && RANKS[7-r] !== fromRank) continue;
+                        
+                        // Check if piece can legally move there (simplified)
+                        if (this.canMove(r, c, toRow, toCol, p.type, pieceType === 'P' && cleanSan.includes('x'))) {
+                            candidates.push({ row: r, col: c });
+                        }
+                    }
+                }
+            }
+
+            if (candidates.length === 0) {
+                console.error(`No candidate found for move ${moveSan} on turn ${this.turn}`);
+                return null;
+            }
+            // If multiple, basic logic (usually disambiguation handles it, or first valid)
+            const from = candidates[0]; 
+            move = { from, to: { row: toRow, col: toCol }, promotion };
+        }
+
+        // Execute Move
+        const p = this.board[move.from.row][move.from.col];
+        this.board[move.to.row][move.to.col] = p;
+        this.board[move.from.row][move.from.col] = null;
+
+        // Castle Rook
+        if (move.isCastle) {
+            const rook = this.board[move.rookFrom.row][move.rookFrom.col];
+            this.board[move.rookTo.row][move.rookTo.col] = rook;
+            this.board[move.rookFrom.row][move.rookFrom.col] = null;
+        }
+
+        // Promotion
+        if (move.promotion) {
+            this.board[move.to.row][move.to.col].type = move.promotion.toLowerCase(); 
+        }
+
+        // Update Turn
+        this.turn = this.turn === 'w' ? 'b' : 'w';
+        
+        return move;
+    }
+    
+    // Fix Setup to be consistent
+    setupRow(row, color, pieces) {
+        pieces.split('').forEach((p, col) => {
+             // Store type as UPPERCASE always for logic simplicity
+            this.board[row][col] = { color, type: p.toUpperCase() };
+        });
+    }
+
+    // Simplified Move Validator
+    canMove(r1, c1, r2, c2, type, isCapture) {
+        // Very basic checks to filter obviously wrong pieces (like a knight on the other side of board)
+        // Does NOT check for pins, checks, etc. (Simplified per requirements)
+        
+        const dr = r2 - r1;
+        const dc = c2 - c1;
+        const absDr = Math.abs(dr);
+        const absDc = Math.abs(dc);
+        const color = this.turn; // 'w' moves up (row index decreases), 'b' moves down
+
+        type = type.toUpperCase();
+
+        if (type === 'N') {
+            return (absDr === 2 && absDc === 1) || (absDr === 1 && absDc === 2);
+        }
+        if (type === 'B') {
+            if (absDr !== absDc) return false;
+            return this.isPathClear(r1, c1, r2, c2);
+        }
+        if (type === 'R') {
+            if (dr !== 0 && dc !== 0) return false;
+            return this.isPathClear(r1, c1, r2, c2);
+        }
+        if (type === 'Q') {
+            if (dr !== 0 && dc !== 0 && absDr !== absDc) return false;
+            return this.isPathClear(r1, c1, r2, c2);
+        }
+        if (type === 'K') {
+            return absDr <= 1 && absDc <= 1;
+        }
+        if (type === 'P') {
+            const direction = color === 'w' ? -1 : 1;
+            const startRow = color === 'w' ? 6 : 1;
+            
+            if (c1 === c2 && !isCapture) {
+                // Move forward 1
+                if (dr === direction) return true;
+                // Move forward 2
+                if (r1 === startRow && dr === 2 * direction && this.isPathClear(r1, c1, r2, c2)) return true;
+            } else if (Math.abs(c1 - c2) === 1 && dr === direction) {
+                // Capture (diagonal)
+                // Note: En passant logic omitted for brevity in "Simplified"
+                return true; 
+            }
+            return false;
+        }
+        return false;
+    }
+
+    isPathClear(r1, c1, r2, c2) {
+        const dr = Math.sign(r2 - r1);
+        const dc = Math.sign(c2 - c1);
+        let r = r1 + dr;
+        let c = c1 + dc;
+        while (r !== r2 || c !== c2) {
+            if (this.board[r][c]) return false;
+            r += dr;
+            c += dc;
+        }
+        return true;
+    }
+}
+
+// Override reset for the class with correct case
+ChessBoard.prototype.reset = function() {
+    this.board = Array(8).fill(null).map(() => Array(8).fill(null));
+    // Black pieces at top (row 0,1)
+    const pieces = ['rnbqkbnr', 'pppppppp', 'PPPPPPPP', 'RNBQKBNR'];
+    
+    // Black Back Rank
+    pieces[0].split('').forEach((p, c) => this.board[0][c] = { color: 'b', type: p.toUpperCase() });
+    // Black Pawns
+    pieces[1].split('').forEach((p, c) => this.board[1][c] = { color: 'b', type: p.toUpperCase() });
+    
+    // White Pawns
+    pieces[2].split('').forEach((p, c) => this.board[6][c] = { color: 'w', type: p.toUpperCase() });
+    // White Back Rank
+    pieces[3].split('').forEach((p, c) => this.board[7][c] = { color: 'w', type: p.toUpperCase() });
+
+    this.turn = 'w';
+};
+
+
+// --- PGN Parser ---
+class PGNParser {
+    static parse(pgnText) {
+        const games = [];
+        // Normalize line endings
+        const text = pgnText.replace(/\r\n/g, '\n');
+        const lines = text.split('\n');
+        
+        let currentGame = { headers: {}, rawMoves: "" };
+        let inMoves = false;
+        
+        for (let line of lines) {
+            line = line.trim();
+            if (!line) continue;
+
+            if (line.startsWith('[')) {
+                if (inMoves) {
+                    // New game started, save previous
+                    games.push(this.processGame(currentGame));
+                    currentGame = { headers: {}, rawMoves: "" };
+                    inMoves = false;
+                }
+                // Parse header
+                const match = line.match(/^\[(\w+)\s+"(.*)"\]$/);
+                if (match) {
+                    currentGame.headers[match[1]] = match[2];
+                }
+            } else {
+                inMoves = true;
+                currentGame.rawMoves += " " + line;
+            }
+        }
+        if (currentGame.rawMoves) {
+            games.push(this.processGame(currentGame));
+        }
+        return games;
+    }
+
+    static processGame(gameData) {
+        // Parse the move string
+        let raw = gameData.rawMoves;
+        
+        // Remove result at end (1-0, etc)
+        raw = raw.replace(/\s*(1-0|0-1|1\/2-1\/2|\*)\s*$/, '');
+        
+        // Tokenizer
+        const tokens = this.tokenize(raw);
+        const moveStructure = this.buildMoveTree(tokens);
+        
+        return {
+            headers: gameData.headers,
+            moves: moveStructure
+        };
+    }
+
+    static tokenize(text) {
+        // Tokens: (, ), {comment}, move, move_number.
+        // Regex to split but keep delimiters
+        // Handle comments first to avoid parsing content inside
+        
+        // Simple state machine for tokenizing
+        const tokens = [];
+        let current = "";
+        let inComment = false;
+        
+        for (let i = 0; i < text.length; i++) {
+            const char = text[i];
+            
+            if (inComment) {
+                if (char === '}') {
+                    tokens.push({ type: 'comment', value: current.trim() });
+                    current = "";
+                    inComment = false;
+                } else {
+                    current += char;
+                }
+                continue;
+            }
+
+            if (char === '{') {
+                if (current.trim()) tokens.push({ type: 'text', value: current.trim() });
+                current = "";
+                inComment = true;
+                continue;
+            }
+            
+            if (char === '(' || char === ')') {
+                if (current.trim()) tokens.push({ type: 'text', value: current.trim() });
+                tokens.push({ type: 'symbol', value: char });
+                current = "";
+                continue;
+            }
+            
+            current += char;
+        }
+        if (current.trim()) tokens.push({ type: 'text', value: current.trim() });
+        
+        // Further split 'text' tokens into moves
+        const finalTokens = [];
+        tokens.forEach(t => {
+            if (t.type !== 'text') {
+                finalTokens.push(t);
+                return;
+            }
+            // Split by space, but keep move numbers attached or separate?
+            // "1. e4" -> "1.", "e4"
+            const parts = t.value.split(/\s+/);
+            parts.forEach(p => {
+                if (!p) return;
+                // Check for move number "1." or "1..."
+                if (/^\d+\.+$/.test(p)) {
+                    // It's a number, ignore or store? Store for alignment?
+                    // We can derive numbers. Ignore for now.
+                    return; 
+                }
+                finalTokens.push({ type: 'move', value: p });
+            });
+        });
+        
+        return finalTokens;
+    }
+
+    static buildMoveTree(tokens) {
+        // Recursive builder
+        const root = [];
+        let currentList = root;
+        const stack = [root];
+        
+        for (let token of tokens) {
+            if (token.type === 'symbol' && token.value === '(') {
+                // Start variation: attach to last move
+                if (currentList.length === 0) continue; // Should not happen
+                const lastMove = currentList[currentList.length - 1];
+                if (!lastMove.variations) lastMove.variations = [];
+                const newVar = [];
+                lastMove.variations.push(newVar);
+                stack.push(currentList);
+                currentList = newVar;
+            } else if (token.type === 'symbol' && token.value === ')') {
+                // End variation
+                if (stack.length > 1) {
+                    stack.pop();
+                    currentList = stack[stack.length - 1];
+                }
+            } else if (token.type === 'comment') {
+                // Attach to last move, or if no moves, it's pre-game or pre-variation comment
+                if (currentList.length > 0) {
+                    const lastMove = currentList[currentList.length - 1];
+                    lastMove.comments = lastMove.comments || [];
+                    lastMove.comments.push(token.value);
+                } else {
+                    // Floating comment
+                }
+            } else if (token.type === 'move') {
+                // Sanitize move number if stuck: "1.e4" -> "e4"
+                let san = token.value.replace(/^\d+\.+/, '');
+                if (!san) continue; 
+                
+                const moveObj = {
+                    san: san,
+                    comments: [],
+                    variations: []
+                };
+                currentList.push(moveObj);
+            }
+        }
+        return root;
+    }
+}
+
+// --- App Controller ---
+class ChessApp {
+    constructor() {
+        this.board = new ChessBoard();
+        this.games = [];
+        this.currentGameIndex = 0;
+        this.movesFlatList = []; // Array of { san, ... } linked to UI
+        this.currentPly = -1; // -1 = start position
+        this.history = []; // Array of board snapshots
+        
+        this.ui = {
+            board: document.getElementById('board'),
+            movesList: document.getElementById('movesList'),
+            fileInput: document.getElementById('pgnInput'),
+            gameSelect: document.getElementById('gameSelect'),
+            gameSelectorDiv: document.getElementById('game-selector'),
+            meta: {
+                container: document.getElementById('gameMetadata'),
+                title: document.getElementById('gameTitle'),
+                players: document.getElementById('gamePlayers'),
+                event: document.getElementById('gameEvent')
+            },
+            btns: {
+                start: document.getElementById('btnStart'),
+                prev: document.getElementById('btnPrev'),
+                next: document.getElementById('btnNext'),
+                flip: document.getElementById('btnFlip')
+            }
+        };
+
+        this.initListeners();
+        this.renderBoard();
+        this.isFlipped = false;
+    }
+
+    initListeners() {
+        this.ui.fileInput.addEventListener('change', (e) => this.handleFileUpload(e));
+        this.ui.gameSelect.addEventListener('change', (e) => this.loadGame(parseInt(e.target.value)));
+        
+        this.ui.btns.start.addEventListener('click', () => this.goToPly(-1));
+        this.ui.btns.prev.addEventListener('click', () => this.goToPly(this.currentPly - 1));
+        this.ui.btns.next.addEventListener('click', () => this.goToPly(this.currentPly + 1));
+        this.ui.btns.flip.addEventListener('click', () => this.flipBoard());
+        
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowLeft') this.goToPly(this.currentPly - 1);
+            if (e.key === 'ArrowRight') this.goToPly(this.currentPly + 1);
+        });
+    }
+
+    handleFileUpload(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            try {
+                this.games = PGNParser.parse(event.target.result);
+                this.updateGameSelector();
+                if (this.games.length > 0) {
+                    this.loadGame(0);
+                }
+            } catch (err) {
+                alert("Error parsing PGN: " + err.message);
+                console.error(err);
+            }
+        };
+        reader.readAsText(file);
+    }
+
+    updateGameSelector() {
+        if (this.games.length <= 1) {
+            this.ui.gameSelectorDiv.style.display = 'none';
+        } else {
+            this.ui.gameSelectorDiv.style.display = 'block';
+            this.ui.gameSelect.innerHTML = '';
+            this.games.forEach((g, i) => {
+                const opt = document.createElement('option');
+                opt.value = i;
+                opt.text = `${i+1}. ${g.headers.White} vs ${g.headers.Black} (${g.headers.Date})`;
+                this.ui.gameSelect.appendChild(opt);
+            });
+        }
+    }
+
+    loadGame(index) {
+        this.currentGameIndex = index;
+        const game = this.games[index];
+        
+        // Update Metadata
+        this.ui.meta.container.style.display = 'block';
+        this.ui.meta.title.textContent = game.headers.Event || "Unknown Event";
+        this.ui.meta.players.textContent = `${game.headers.White || "?"} vs ${game.headers.Black || "?"}`;
+        this.ui.meta.event.textContent = `Result: ${game.headers.Result || "*"} | Date: ${game.headers.Date || "?"}`;
+
+        // Reset Board
+        this.board.reset();
+        this.history = [this.board.clone()];
+        this.currentPly = -1;
+        this.movesFlatList = [];
+
+        // Process Moves & Build UI
+        this.ui.movesList.innerHTML = '';
+        
+        let moveNum = 1;
+        let whiteMove = null;
+        let activePairDiv = null;
+
+        // Flatten main line for history tracking
+        const processLine = (moves) => {
+            for (let move of moves) {
+                // Execute move logic
+                const moveData = this.board.makeMove(move.san);
+                if (!moveData) {
+                    console.error("Invalid move in PGN:", move.san);
+                    break;
+                }
+                
+                // Save snapshot
+                this.history.push(this.board.clone());
+                const plyIndex = this.history.length - 2; // -1 is start, so 0 is first move
+                
+                // Store metadata for UI syncing
+                const uiData = {
+                    ply: plyIndex + 1, // 0-based ply 0 is move 1
+                    san: move.san,
+                    elementId: `move-${plyIndex + 1}`,
+                    comments: move.comments,
+                    variations: move.variations
+                };
+                this.movesFlatList.push(uiData);
+
+                // Render UI
+                const isWhite = (this.history.length % 2 === 0);
+                
+                if (isWhite) {
+                    // Create new Card
+                    activePairDiv = document.createElement('div');
+                    activePairDiv.className = 'move-pair';
+                    activePairDiv.dataset.moveNum = moveNum;
+
+                    // Number
+                    const numSpan = document.createElement('div');
+                    numSpan.className = 'move-number';
+                    numSpan.textContent = `${moveNum}.`;
+                    activePairDiv.appendChild(numSpan);
+
+                    // Content Container
+                    const contentDiv = document.createElement('div');
+                    contentDiv.className = 'ply-container';
+                    activePairDiv.appendChild(contentDiv);
+
+                    // Ply Header (Moves)
+                    const headerDiv = document.createElement('div');
+                    headerDiv.className = 'ply-header';
+                    contentDiv.appendChild(headerDiv);
+                    
+                    // White Move
+                    const wSpan = this.createMoveSpan(move.san, plyIndex + 1);
+                    headerDiv.appendChild(wSpan);
+                    
+                    // White Comments
+                    if (move.comments && move.comments.length) {
+                        const cDiv = document.createElement('div');
+                        cDiv.className = 'comment';
+                        cDiv.textContent = move.comments.join(' ');
+                        contentDiv.appendChild(cDiv);
+                    }
+                    
+                    // White Variations
+                    if (move.variations && move.variations.length) {
+                        this.renderVariations(contentDiv, move.variations, plyIndex);
+                    }
+
+                    this.ui.movesList.appendChild(activePairDiv);
+                    whiteMove = { div: contentDiv, header: headerDiv };
+                } else {
+                    // Black move - append to existing
+                    if (!activePairDiv) {
+                        activePairDiv = document.createElement('div');
+                        activePairDiv.className = 'move-pair';
+                        this.ui.movesList.appendChild(activePairDiv);
+                    }
+
+                    const bSpan = this.createMoveSpan(move.san, plyIndex + 1);
+                    whiteMove.header.appendChild(bSpan);
+
+                    // Black Comments
+                    if (move.comments && move.comments.length) {
+                        const cDiv = document.createElement('div');
+                        cDiv.className = 'comment';
+                        cDiv.textContent = move.comments.join(' ');
+                        whiteMove.div.appendChild(cDiv);
+                    }
+
+                    // Black Variations
+                    if (move.variations && move.variations.length) {
+                        this.renderVariations(whiteMove.div, move.variations, plyIndex);
+                    }
+
+                    moveNum++;
+                    whiteMove = null;
+                }
+            }
+        };
+
+        processLine(game.moves);
+
+        // Reset board to start after processing
+        this.goToPly(-1);
+    }
+
+    createMoveSpan(text, ply) {
+        const span = document.createElement('span');
+        span.className = 'move-text';
+        span.textContent = text;
+        span.id = `move-${ply}`;
+        span.onclick = (e) => {
+            e.stopPropagation();
+            this.goToPly(ply);
+        };
+        return span;
+    }
+
+    renderVariations(container, variations, basePly) {
+        const varsDiv = document.createElement('div');
+        varsDiv.className = 'variations';
+        
+        variations.forEach(line => {
+            const lineDiv = document.createElement('div');
+            lineDiv.className = 'variation-line';
+            
+            lineDiv.appendChild(document.createTextNode('('));
+            
+            line.forEach((m, i) => {
+                const span = document.createElement('span');
+                span.className = 'variation-move';
+                span.textContent = m.san;
+                span.onclick = (e) => {
+                    e.stopPropagation();
+                    this.showVariation(basePly, line, i);
+                };
+                lineDiv.appendChild(span);
+                lineDiv.appendChild(document.createTextNode(' '));
+            });
+            
+            lineDiv.appendChild(document.createTextNode(')'));
+            varsDiv.appendChild(lineDiv);
+        });
+        
+        container.appendChild(varsDiv);
+    }
+
+    showVariation(basePly, lineMoves, targetIndex) {
+        // 1. Get base board
+        const baseBoard = this.history[basePly];
+        
+        if (!baseBoard) return;
+        
+        const tempBoard = baseBoard.clone();
+        
+        // 2. Play moves up to target
+        for (let i = 0; i <= targetIndex; i++) {
+            tempBoard.makeMove(lineMoves[i].san);
+        }
+        
+        // 3. Render this temp board directly
+        this.renderBoardState(tempBoard);
+        
+        // Deselect main line highlights
+        document.querySelectorAll('.move-text.current').forEach(el => el.classList.remove('current'));
+        document.querySelectorAll('.move-pair.active').forEach(el => el.classList.remove('active'));
+    }
+
+    goToPly(ply) {
+        if (ply < -1) ply = -1;
+        if (ply >= this.movesFlatList.length) ply = this.movesFlatList.length - 1;
+        
+        this.currentPly = ply;
+        
+        // Update Board
+        const state = this.history[ply + 1];
+        this.renderBoardState(state);
+        
+        // Update UI Highlights
+        document.querySelectorAll('.move-text.current').forEach(el => el.classList.remove('current'));
+        document.querySelectorAll('.move-pair.active').forEach(el => el.classList.remove('active'));
+        
+        if (ply >= 0) {
+            const moveData = this.movesFlatList[ply];
+            const el = document.getElementById(moveData.elementId);
+            if (el) {
+                el.classList.add('current');
+                // Scroll into view
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                
+                // Highlight card
+                const card = el.closest('.move-pair');
+                if (card) card.classList.add('active');
+            }
+        }
+        
+        // Update Buttons
+        this.ui.btns.start.disabled = (ply === -1);
+        this.ui.btns.prev.disabled = (ply === -1);
+        this.ui.btns.next.disabled = (ply === this.movesFlatList.length - 1);
+    }
+
+    renderBoardState(boardObj) {
+        const board = this.ui.board;
+        board.innerHTML = '';
+        
+        // Flip Logic
+        const rows = this.isFlipped ? [0,1,2,3,4,5,6,7] : [7,6,5,4,3,2,1,0];
+        const cols = this.isFlipped ? [7,6,5,4,3,2,1,0] : [0,1,2,3,4,5,6,7];
+        
+        rows.forEach(r => {
+            cols.forEach(c => {
+                const square = document.createElement('div');
+                const isLight = (r + c) % 2 !== 0;
+                square.className = `square ${isLight ? 'light' : 'dark'}`;
+                
+                const piece = boardObj.board[r][c];
+                if (piece) {
+                    square.textContent = PIECES[piece.color][piece.type];
+                    // Color text
+                    if (piece.color === 'w') {
+                        square.style.color = '#fff';
+                        square.style.textShadow = '0 0 2px #000, 0 0 5px rgba(0,0,0,0.5)';
+                    } else {
+                        square.style.color = '#000';
+                        square.style.textShadow = '0 0 1px #fff';
+                    }
+                }
+                
+                board.appendChild(square);
+            });
+        });
+    }
+
+    renderBoard() {
+        this.renderBoardState(this.board);
+    }
+    
+    flipBoard() {
+        this.isFlipped = !this.isFlipped;
+        // Re-render current state
+        if (this.currentPly === -1) {
+            this.renderBoardState(this.history[0]);
+        } else {
+            this.renderBoardState(this.history[this.currentPly + 1]);
+        }
+    }
+}
+
+// Init
+window.addEventListener('DOMContentLoaded', () => {
+    window.chessApp = new ChessApp();
+});
+
+</script>
+</body>
+</html>
