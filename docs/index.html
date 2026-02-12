@@ -590,6 +590,9 @@ class PGNParser {
         // Parse the move string
         let raw = gameData.rawMoves;
         
+        // Sanitize move formats (e.g. "1.c4" -> "1. c4")
+        raw = this.sanitize(raw);
+        
         // Remove result at end (1-0, etc)
         raw = raw.replace(/\s*(1-0|0-1|1\/2-1\/2|\*)\s*$/, '');
         
@@ -601,6 +604,15 @@ class PGNParser {
             headers: gameData.headers,
             moves: moveStructure
         };
+    }
+
+    static sanitize(text) {
+        // Ensure space after move numbers
+        // 1.c4 -> 1. c4
+        text = text.replace(/(\d+\.)([^\s\.])/g, '$1 $2');
+        // 1...e5 -> 1... e5
+        text = text.replace(/(\d+\.\.\.)([^\s])/g, '$1 $2');
+        return text;
     }
 
     static tokenize(text) {
