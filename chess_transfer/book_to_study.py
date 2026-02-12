@@ -393,7 +393,55 @@ def main():
     book_path = args.pdf or args.epub
     book_name = args.book_name or Path(book_path).stem
 
-    print("Parsing book...")
+    # Strategy selection: use HTML-aware parser for structured EPUBs
+    if args.epub:
+        from chess_transfer.parsers.epub_structured import has_movetext_data, parse_structured_epub
+
+        if has_movetext_data(args.epub):
+            return _run_structured_epub(args, book_name)
+
+    # Fallback: text-based parsing for PDFs and unstructured EPUBs
+    return _run_text_based(args, book_name)
+
+
+def _run_structured_epub(args, book_name: str) -> int:
+    """Parse structured EPUB using HTML-aware parser."""
+    from chess_transfer.parsers.epub_structured import parse_structured_epub
+
+    print("Parsing structured EPUB (HTML-aware parser)...")
+    games = parse_structured_epub(args.epub)
+    print(f"Found {len(games)} games.")
+
+    if args.dry_run:
+        for i, game in enumerate(games[:5], 1):
+            pgn = str(game)
+            event = game.headers.get("Event", "?")
+            white = game.headers.get("White", "?")
+            black = game.headers.get("Black", "?")
+            print(f"\n[{i}] {event}")
+            print(f"    {white} vs {black}")
+            print(f"    {pgn[pgn.index(chr(10)*2)+2:][:400]}...")
+        return 0
+
+    output_path = args.output or f"{book_name}.pgn"
+    print(f"\nWriting {len(games)} games to {output_path}...")
+    with open(output_path, 'w', encoding='utf-8') as f:
+        for i, game in enumerate(games):
+            # Prepend book name to Event header, respecting 100-char Lichess limit
+            event = game.headers.get("Event", "?")
+            game.headers["Event"] = f"{book_name} - {event}"[:100]
+
+            f.write(str(game))
+            f.write("\n\n")
+            print(f"   [{i+1}/{len(games)}] {game.headers['Event']}")
+
+    print(f"\nDone. PGN written to {output_path}")
+    return 0
+
+
+def _run_text_based(args, book_name: str) -> int:
+    """Parse book using text-based fallback parser."""
+    print("Parsing book (text-based parser)...")
     text = BookParser.parse_pdf(args.pdf) if args.pdf else BookParser.parse_epub(args.epub)
 
     print("\nExtracting chapters and games...")
@@ -412,7 +460,6 @@ def main():
     with open(output_path, 'w', encoding='utf-8') as f:
         for i, chapter in enumerate(chapters):
             name = f"{book_name} - {chapter['title']}"[:100]
-            # Inject the chapter name into the Event header
             pgn = chapter['pgn'].replace(
                 f'[Event "{chapter["title"]}"]',
                 f'[Event "{name}"]',
