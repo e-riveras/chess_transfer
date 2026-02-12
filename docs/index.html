@@ -298,8 +298,8 @@
 // --- Constants & Utils ---
 // Use filled glyphs for both sides to allow coloring via CSS
 const PIECES = {
-    'w': { 'P': '♟', 'N': '♞', 'B': '♝', 'R': '♜', 'Q': '♛', 'K': '♚' },
-    'b': { 'p': '♟', 'n': '♞', 'b': '♝', 'r': '♜', 'q': '♛', 'k': '♚' }
+    'w': { 'P': '♟', 'N': '♞', 'B': '♝', 'R': '♜', 'Q': '♛', 'K': '♔' },
+    'b': { 'P': '♟', 'N': '♞', 'B': '♝', 'R': '♜', 'Q': '♛', 'K': '♚' }
 };
 
 const FILES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
@@ -398,7 +398,8 @@ class ChessBoard {
             for (let r = 0; r < 8; r++) {
                 for (let c = 0; c < 8; c++) {
                     const p = this.board[r][c];
-                    if (p && p.color === this.turn && p.type === (pieceType === 'P' ? 'p' : pieceType.toLowerCase())) {
+                    // Compare types (Always UPPERCASE)
+                    if (p && p.color === this.turn && p.type === pieceType) {
                         // Check disambiguation constraints
                         if (fromFile && FILES[c] !== fromFile) continue;
                         if (fromRank && RANKS[7-r] !== fromRank) continue;
