@@ -9,3 +9,4 @@ venv/
 htmlcov/
 .pytest_cache/
 *.log
+samples/

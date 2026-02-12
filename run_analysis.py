@@ -1,5 +1,5 @@
-from src.utils import setup_logging
-from src.pipelines.analysis import run_analysis_pipeline
+from chess_tools.lib.utils import setup_logging
+from chess_tools.analysis.pipeline import run_analysis_pipeline
 import sys
 
 if __name__ == "__main__":

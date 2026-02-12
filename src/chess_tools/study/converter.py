@@ -395,7 +395,7 @@ def main():
 
     # Strategy selection: use HTML-aware parser for structured EPUBs
     if args.epub:
-        from chess_transfer.parsers.epub_structured import has_movetext_data, parse_structured_epub
+        from chess_tools.study.parsers.epub_structured import has_movetext_data, parse_structured_epub
 
         if has_movetext_data(args.epub):
             return _run_structured_epub(args, book_name)
@@ -406,7 +406,7 @@ def main():
 
 def _run_structured_epub(args, book_name: str) -> int:
     """Parse structured EPUB using HTML-aware parser."""
-    from chess_transfer.parsers.epub_structured import parse_structured_epub
+    from chess_tools.study.parsers.epub_structured import parse_structured_epub
 
     print("Parsing structured EPUB (HTML-aware parser)...")
     games = parse_structured_epub(args.epub)

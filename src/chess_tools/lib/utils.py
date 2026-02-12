@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 
 def get_project_root() -> Path:
     """Returns the project root directory (where run_sync.py lives)."""
-    # Navigate up from src/utils.py to project root
+    # Navigate up from chess_tools.lib.utils.py to project root
     return Path(__file__).parent.parent
 
 def get_output_dir(subdir: str = "analysis") -> str:

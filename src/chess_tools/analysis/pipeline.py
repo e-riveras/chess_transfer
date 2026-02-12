@@ -1,11 +1,11 @@
 import os
 import sys
 import logging
-from src.utils import check_env_var, get_output_dir
-from src.analysis.engine import ChessAnalyzer
-from src.analysis.narrator import GoogleGeminiNarrator, MockNarrator
-from src.analysis.report import generate_markdown_report
-from src.api.lichess import fetch_latest_game, get_lichess_client, get_lichess_username
+from chess_tools.lib.utils import check_env_var, get_output_dir
+from chess_tools.analysis.engine import ChessAnalyzer
+from chess_tools.analysis.narrator import GoogleGeminiNarrator, MockNarrator
+from chess_tools.analysis.report import generate_markdown_report
+from chess_tools.lib.api.lichess import fetch_latest_game, get_lichess_client, get_lichess_username
 
 logger = logging.getLogger("chess_transfer")
 

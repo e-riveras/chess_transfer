@@ -2,13 +2,13 @@ import os
 import logging
 import time
 from datetime import datetime, timezone
-from src.utils import check_env_var, get_output_dir
-from src.api.lichess import get_lichess_client, StudyManager, import_game_to_lichess
-from src.api.chesscom import get_chesscom_archives, get_games_from_archive
-from src.data.history import load_history, save_history
-from src.analysis.engine import ChessAnalyzer
-from src.analysis.narrator import GoogleGeminiNarrator, MockNarrator
-from src.analysis.report import generate_markdown_report
+from chess_tools.lib.utils import check_env_var, get_output_dir
+from chess_tools.lib.api.lichess import get_lichess_client, StudyManager, import_game_to_lichess
+from chess_tools.lib.api.chesscom import get_chesscom_archives, get_games_from_archive
+from chess_tools.lib.data.history import load_history, save_history
+from chess_tools.analysis.engine import ChessAnalyzer
+from chess_tools.analysis.narrator import GoogleGeminiNarrator, MockNarrator
+from chess_tools.analysis.report import generate_markdown_report
 
 logger = logging.getLogger("chess_transfer")
 

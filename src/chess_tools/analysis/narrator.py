@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 import logging
 import chess
-from src.models import CrucialMoment
+from chess_tools.lib.models import CrucialMoment
 from typing import List
 
 logger = logging.getLogger("chess_transfer")

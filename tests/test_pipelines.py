@@ -1,23 +1,23 @@
 import unittest
 from unittest.mock import MagicMock, patch, Mock, mock_open
 import os
-from src.api.lichess import get_lichess_client, import_game_to_lichess
-from src.api.chesscom import get_chesscom_archives, get_games_from_archive
-from src.data.history import load_history, save_history
-from src.pipelines.sync import run_sync_pipeline
+from chess_tools.lib.api.lichess import get_lichess_client, import_game_to_lichess
+from chess_tools.lib.api.chesscom import get_chesscom_archives, get_games_from_archive
+from chess_tools.lib.data.history import load_history, save_history
+from chess_tools.transfer.sync import run_sync_pipeline
 import berserk
 import requests
 
 class TestSyncGames(unittest.TestCase):
 
-    @patch('src.api.lichess.berserk.Client')
-    @patch('src.api.lichess.berserk.TokenSession')
+    @patch('chess_tools.lib.api.lichess.berserk.Client')
+    @patch('chess_tools.lib.api.lichess.berserk.TokenSession')
     def test_get_lichess_client(self, mock_session, mock_client):
         client = get_lichess_client('fake_token')
         mock_session.assert_called_with('fake_token')
         mock_client.assert_called_once()
 
-    @patch('src.api.chesscom.requests.get')
+    @patch('chess_tools.lib.api.chesscom.requests.get')
     def test_get_chesscom_archives_success(self, mock_get):
         mock_response = Mock()
         mock_response.json.return_value = {'archives': ['url1', 'url2']}
@@ -27,14 +27,14 @@ class TestSyncGames(unittest.TestCase):
         archives = get_chesscom_archives('testuser')
         self.assertEqual(archives, ['url1', 'url2'])
 
-    @patch('src.api.chesscom.requests.get')
+    @patch('chess_tools.lib.api.chesscom.requests.get')
     def test_get_chesscom_archives_failure(self, mock_get):
         mock_get.side_effect = requests.RequestException("Error")
         
         archives = get_chesscom_archives('testuser')
         self.assertEqual(archives, [])
 
-    @patch('src.api.chesscom.requests.get')
+    @patch('chess_tools.lib.api.chesscom.requests.get')
     def test_get_games_from_archive_success(self, mock_get):
         mock_response = Mock()
         mock_response.json.return_value = {'games': [{'pgn': '1. e4'}]}
@@ -84,28 +84,28 @@ class TestSyncGames(unittest.TestCase):
             {'url': 'http://lichess.org/retry_success'}
         ]
         
-        # Patch sleep in src.api.lichess where import_game_to_lichess resides
-        with patch('src.api.lichess.time.sleep') as mock_sleep:
+        # Patch sleep in chess_tools.lib.api.lichess where import_game_to_lichess resides
+        with patch('chess_tools.lib.api.lichess.time.sleep') as mock_sleep:
             status = import_game_to_lichess(mock_client, 'pgn_data')
             self.assertEqual(status, "IMPORTED")
             mock_sleep.assert_called_with(60)
             self.assertEqual(mock_client.games.import_game.call_count, 2)
 
     # Patch get_history_file_path to avoid path issues during test
-    @patch('src.data.history.get_history_file_path', return_value='data/history.json')
+    @patch('chess_tools.lib.data.history.get_history_file_path', return_value='data/history.json')
     def test_load_history_exists(self, mock_path):
         with patch("builtins.open", mock_open(read_data='{"imported_ids": ["123"]}' )):
             with patch("os.path.exists", return_value=True):
                 history = load_history()
                 self.assertEqual(history, {"imported_ids": ["123"], "monthly_studies": {}, "studied_ids": [], "last_analyzed_id": None})
 
-    @patch('src.data.history.get_history_file_path', return_value='data/history.json')
+    @patch('chess_tools.lib.data.history.get_history_file_path', return_value='data/history.json')
     def test_load_history_not_exists(self, mock_path):
         with patch("os.path.exists", return_value=False):
             history = load_history()
             self.assertEqual(history, {"imported_ids": [], "monthly_studies": {}, "studied_ids": [], "last_analyzed_id": None})
 
-    @patch('src.data.history.get_history_file_path', return_value='data/history.json')
+    @patch('chess_tools.lib.data.history.get_history_file_path', return_value='data/history.json')
     def test_save_history(self, mock_path):
         m_open = mock_open()
         with patch("builtins.open", m_open):
@@ -113,18 +113,18 @@ class TestSyncGames(unittest.TestCase):
             m_open.assert_called_with('data/history.json', 'w')
 
     # Test the Pipeline (Sync)
-    # We patch modules where they are IMPORTED in src.pipelines.sync
-    @patch('src.pipelines.sync.generate_markdown_report')
-    @patch('src.pipelines.sync.GoogleGeminiNarrator')
-    @patch('src.pipelines.sync.ChessAnalyzer')
-    @patch('src.pipelines.sync.StudyManager')
-    @patch('src.pipelines.sync.time.sleep')
-    @patch('src.pipelines.sync.import_game_to_lichess')
-    @patch('src.pipelines.sync.get_games_from_archive')
-    @patch('src.pipelines.sync.get_chesscom_archives')
-    @patch('src.pipelines.sync.load_history')
-    @patch('src.pipelines.sync.save_history')
-    @patch('src.pipelines.sync.get_lichess_client')
+    # We patch modules where they are IMPORTED in chess_tools.transfer.sync
+    @patch('chess_tools.transfer.sync.generate_markdown_report')
+    @patch('chess_tools.transfer.sync.GoogleGeminiNarrator')
+    @patch('chess_tools.transfer.sync.ChessAnalyzer')
+    @patch('chess_tools.transfer.sync.StudyManager')
+    @patch('chess_tools.transfer.sync.time.sleep')
+    @patch('chess_tools.transfer.sync.import_game_to_lichess')
+    @patch('chess_tools.transfer.sync.get_games_from_archive')
+    @patch('chess_tools.transfer.sync.get_chesscom_archives')
+    @patch('chess_tools.transfer.sync.load_history')
+    @patch('chess_tools.transfer.sync.save_history')
+    @patch('chess_tools.transfer.sync.get_lichess_client')
     def test_sync_pipeline(self, mock_get_client, mock_save_hist, mock_load_hist, mock_get_archives, mock_get_games, mock_import, mock_sleep, mock_study_manager_cls, mock_analyzer, mock_narrator, mock_report):
         
         mock_load_hist.return_value = {"imported_ids": ["old_game_id"], "monthly_studies": {}, "studied_ids": []}

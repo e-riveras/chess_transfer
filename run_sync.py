@@ -1,5 +1,5 @@
-from src.utils import setup_logging
-from src.pipelines.sync import run_sync_pipeline
+from chess_tools.lib.utils import setup_logging
+from chess_tools.transfer.sync import run_sync_pipeline
 
 if __name__ == "__main__":
     setup_logging()

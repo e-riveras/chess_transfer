@@ -9,7 +9,7 @@ Usage:
 See python run_book_to_study.py --help for all options.
 """
 
-from chess_transfer.book_to_study import main
+from chess_tools.study.converter import main
 
 if __name__ == "__main__":
     exit(main())

@@ -4,7 +4,7 @@ import chess.svg
 import logging
 import urllib.parse
 from typing import Optional, List, Dict, Tuple, Any
-from src.models import CrucialMoment
+from chess_tools.lib.models import CrucialMoment
 
 logger = logging.getLogger("chess_transfer")
 

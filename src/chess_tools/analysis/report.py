@@ -1,7 +1,7 @@
 import os
 import logging
 from typing import List, Dict
-from src.models import CrucialMoment
+from chess_tools.lib.models import CrucialMoment
 
 logger = logging.getLogger("chess_transfer")
 

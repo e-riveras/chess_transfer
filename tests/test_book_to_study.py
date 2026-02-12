@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from chess_transfer.book_to_study import (
+from chess_tools.study.converter import (
     BookParser,
     NotationParser,
 )

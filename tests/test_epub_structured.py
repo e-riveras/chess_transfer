@@ -7,8 +7,8 @@ from unittest.mock import patch
 import chess.pgn
 import pytest
 
-from chess_transfer.parsers.movetext import parse_movetext, _clean_movetext, _build_mv_mapping
-from chess_transfer.parsers.epub_structured import (
+from chess_tools.study.parsers.movetext import parse_movetext, _clean_movetext, _build_mv_mapping
+from chess_tools.study.parsers.epub_structured import (
     has_movetext_data,
     parse_structured_epub,
     _extract_game_headers,
@@ -19,7 +19,7 @@ from chess_transfer.parsers.epub_structured import (
 from bs4 import BeautifulSoup
 
 
-EPUB_PATH = Path(__file__).parent.parent / "chess_transfer" / "annas-arch-dab3647cdba4.epub"
+EPUB_PATH = Path(__file__).parent.parent / "samples" / "annas-arch-dab3647cdba4.epub"
 EPUB_AVAILABLE = EPUB_PATH.exists()
 
 
