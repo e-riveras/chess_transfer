@@ -1,16 +1,24 @@
 import os
 import logging
+import re
 import time
 from datetime import datetime, timezone
-from chess_tools.lib.utils import check_env_var, get_output_dir
+from urllib.parse import urlparse
+from chess_tools.lib.utils import check_env_var, get_output_dir, get_repo_root
 from chess_tools.lib.api.lichess import get_lichess_client, StudyManager, import_game_to_lichess
 from chess_tools.lib.api.chesscom import get_chesscom_archives, get_games_from_archive
 from chess_tools.lib.data.history import load_history, save_history
 from chess_tools.analysis.engine import ChessAnalyzer
 from chess_tools.analysis.narrator import GoogleGeminiNarrator, MockNarrator
-from chess_tools.analysis.report import generate_markdown_report
+from chess_tools.analysis.report import generate_markdown_report, generate_html_report, regenerate_index_page
 
 logger = logging.getLogger("chess_transfer")
+
+MAX_IMPORTS_PER_RUN = 100
+IMPORT_DELAY_SECONDS = 6
+DUPLICATE_DELAY_SECONDS = 1
+STUDY_ADD_DELAY_SECONDS = 2
+
 
 def run_sync_pipeline():
     """
@@ -19,7 +27,7 @@ def run_sync_pipeline():
     """
     lichess_token = check_env_var("LICHESS_TOKEN")
     chesscom_username = os.getenv('CHESSCOM_USERNAME', 'erivera90')
-    max_imports = 100
+    max_imports = MAX_IMPORTS_PER_RUN
 
     logger.info("Starting Chess.com to Lichess sync...")
     
@@ -59,7 +67,7 @@ def run_sync_pipeline():
             if not url or not pgn:
                 continue
                 
-            game_id = url.split('/')[-1]
+            game_id = urlparse(url).path.rstrip('/').split('/')[-1]
             
             if latest_candidate_game is None:
                 latest_candidate_game = {'id': game_id, 'pgn': pgn}
@@ -73,16 +81,16 @@ def run_sync_pipeline():
                     imported_ids.add(game_id)
                     actions_count += 1
                     if import_status == "IMPORTED":
-                        time.sleep(6)
+                        time.sleep(IMPORT_DELAY_SECONDS)
                     else:
-                        time.sleep(1)
+                        time.sleep(DUPLICATE_DELAY_SECONDS)
                 else:
-                    time.sleep(1)
+                    time.sleep(DUPLICATE_DELAY_SECONDS)
                     continue 
             
             # --- STEP 2: STUDY ---
             is_rapid = (time_class == 'rapid')
-            has_moves = ("20." in pgn)
+            has_moves = bool(re.search(r'\b20\.', pgn))
             
             if is_rapid and has_moves:
                 if game_id not in studied_ids:
@@ -108,7 +116,7 @@ def run_sync_pipeline():
                             actions_count += 1
                             last_analyzable_pgn = pgn
                             last_analyzable_id = game_id
-                            time.sleep(2) 
+                            time.sleep(STUDY_ADD_DELAY_SECONDS)
                 else:
                     logger.debug(f"Game {game_id} already in studied_ids.")
             else:
@@ -175,6 +183,11 @@ def run_sync_pipeline():
                     output_dir = get_output_dir("analysis")
 
                     generate_markdown_report(moments, metadata, output_dir=output_dir, summary=summary)
+
+                    html_dir = str(get_repo_root() / "docs" / "analysis")
+                    generate_html_report(moments, metadata, output_dir=html_dir, summary=summary)
+                    regenerate_index_page(html_dir)
+
                     logger.info("Analysis report generated.")
                     
                     history["last_analyzed_id"] = id_to_analyze

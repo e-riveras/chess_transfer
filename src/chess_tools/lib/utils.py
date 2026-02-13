@@ -9,6 +9,15 @@ def get_project_root() -> Path:
     # Navigate up from chess_tools.lib.utils.py to project root
     return Path(__file__).parent.parent
 
+def get_repo_root() -> Path:
+    """Returns the git repository root directory (where .git/ lives)."""
+    current = Path(__file__).resolve().parent
+    while current != current.parent:
+        if (current / '.git').exists():
+            return current
+        current = current.parent
+    return Path.cwd()
+
 def get_output_dir(subdir: str = "analysis") -> str:
     """Returns the path to an output directory within the project root."""
     return str(get_project_root() / subdir)

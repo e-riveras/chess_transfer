@@ -2,7 +2,7 @@
 
 from chess_tools.analysis.engine import ChessAnalyzer
 from chess_tools.analysis.narrator import AnalysisNarrator, GoogleGeminiNarrator, MockNarrator
-from chess_tools.analysis.report import generate_markdown_report
+from chess_tools.analysis.report import generate_markdown_report, generate_html_report, regenerate_index_page
 
 __all__ = [
     "ChessAnalyzer",
@@ -10,4 +10,6 @@ __all__ = [
     "GoogleGeminiNarrator",
     "MockNarrator",
     "generate_markdown_report",
+    "generate_html_report",
+    "regenerate_index_page",
 ]

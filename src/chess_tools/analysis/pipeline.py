@@ -1,10 +1,10 @@
 import os
 import sys
 import logging
-from chess_tools.lib.utils import check_env_var, get_output_dir
+from chess_tools.lib.utils import check_env_var, get_output_dir, get_repo_root
 from chess_tools.analysis.engine import ChessAnalyzer
 from chess_tools.analysis.narrator import GoogleGeminiNarrator, MockNarrator
-from chess_tools.analysis.report import generate_markdown_report
+from chess_tools.analysis.report import generate_markdown_report, generate_html_report, regenerate_index_page
 from chess_tools.lib.api.lichess import fetch_latest_game, get_lichess_client, get_lichess_username
 
 logger = logging.getLogger("chess_transfer")
@@ -77,6 +77,10 @@ def run_analysis_pipeline(pgn_file_path: str = "game.pgn"):
             output_dir = get_output_dir("analysis")
             
             generate_markdown_report(moments, metadata, output_dir=output_dir, summary=summary)
+
+            html_dir = str(get_repo_root() / "docs" / "analysis")
+            generate_html_report(moments, metadata, output_dir=html_dir, summary=summary)
+            regenerate_index_page(html_dir)
             
     except Exception as e:
         logger.exception(f"An unexpected error occurred: {e}")
