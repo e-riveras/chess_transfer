@@ -39,6 +39,7 @@ jobs:
           CHESSCOM_USERNAME: erivera90
           LOG_LEVEL: DEBUG
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PYTHONPATH: ${{ github.workspace }}/src:${{ github.workspace }}
         run: |
           python run_sync.py
 
