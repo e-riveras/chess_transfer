@@ -8,6 +8,11 @@ from chess_tools.lib.models import CrucialMoment
 
 logger = logging.getLogger("chess_transfer")
 
+MATE_SCORE_CP = 10000
+BLUNDER_THRESHOLD_CP = 250
+DECIDED_POSITION_CP = 500
+
+
 class ChessAnalyzer:
     """
     Wraps the Stockfish chess engine to analyze games and identify mistakes.
@@ -41,10 +46,10 @@ class ChessAnalyzer:
         Handles mate scores by converting them to +/- 10000.
         """
         if score.is_mate():
-            return 10000 if score.mate() > 0 else -10000
-        return score.score(mate_score=10000)
+            return MATE_SCORE_CP if score.mate() > 0 else -MATE_SCORE_CP
+        return score.score(mate_score=MATE_SCORE_CP)
 
-    def analyze_game(self, pgn_text: str, hero_username: str = None, threshold: int = 250) -> Tuple[List[CrucialMoment], Dict[str, str]]:
+    def analyze_game(self, pgn_text: str, hero_username: str = None, threshold: int = BLUNDER_THRESHOLD_CP) -> Tuple[List[CrucialMoment], Dict[str, str]]:
         """
         Iterates through the game moves and identifies crucial moments.
 
@@ -86,23 +91,21 @@ class ChessAnalyzer:
                 logger.warning(f"Hero {hero_username} not found in players: {metadata['White']} vs {metadata['Black']}")
 
         moments = []
-        board = game.board()
-        
+
         for node in game.mainline():
             if not self.engine:
                 break
 
-            # The move in 'node' was made by the side to move in 'node.parent'
-            # node.parent.board().turn is the color of the player who made the move.
-            mover_color = node.parent.board().turn
-            
+            # board_before: the position the mover was facing (before their move).
+            # node.parent.board() replays from root each call — always correct.
+            board_before = node.parent.board()
+            mover_color = board_before.turn
+
             # Filter: Only analyze moves made by the hero
             if hero_color is not None and mover_color != hero_color:
-                # Still need to update board state implicitly by iterating
                 continue
 
             # 1. Analyze Position BEFORE the move (Best Play)
-            board_before = node.parent.board()
             info_before = self.engine.analyse(board_before, chess.engine.Limit(time=self.time_limit))
             score_before = info_before["score"].pov(mover_color)
             cp_before = self._score_to_cp(score_before)
@@ -123,8 +126,8 @@ class ChessAnalyzer:
             delta = cp_after - cp_before
             
             # 4. Smart Filter (Context-Aware Mercy Rule)
-            is_decided_before = abs(cp_before) > 500
-            is_decided_after = abs(cp_after) > 500
+            is_decided_before = abs(cp_before) > DECIDED_POSITION_CP
+            is_decided_after = abs(cp_after) > DECIDED_POSITION_CP
             same_result = (cp_before > 0 and cp_after > 0) or (cp_before < 0 and cp_after < 0)
 
             if is_decided_before and is_decided_after and same_result:

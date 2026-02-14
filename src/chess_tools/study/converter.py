@@ -10,6 +10,8 @@ import re
 from pathlib import Path
 from typing import List, Dict
 
+MAX_COMMENT_LENGTH = 3000
+
 try:
     import chess
     import chess.pgn
@@ -163,6 +165,12 @@ class NotationParser:
             def __init__(self, text: str):
                 self.text = text
 
+        class VariationStartToken:
+            __slots__ = []
+
+        class VariationEndToken:
+            __slots__ = []
+
         # =====================================================
         # TOKENIZER (Sticky Regex)
         # =====================================================
@@ -190,6 +198,18 @@ class NotationParser:
             last_was_white = False
 
             while pos < len(raw_text):
+                # Variation markers take highest priority
+                if raw_text[pos] == '(':
+                    tokens.append(VariationStartToken())
+                    pos += 1
+                    last_was_white = False
+                    continue
+                if raw_text[pos] == ')':
+                    tokens.append(VariationEndToken())
+                    pos += 1
+                    last_was_white = False
+                    continue
+
                 # Try explicit move first
                 m = explicit_move.match(raw_text, pos)
                 if m:
@@ -219,19 +239,26 @@ class NotationParser:
                             pos = san_m.end()
                             continue
 
-                # No move - collect text until next move
+                # No move - collect text until next move or variation marker
                 next_move = explicit_move.search(raw_text, pos)
-                if next_move:
-                    text_content = raw_text[pos:next_move.start()]
-                    if text_content.strip():
-                        tokens.append(TextToken(text_content.strip()))
-                    pos = next_move.start()
-                    last_was_white = False
+                paren_search = re.search(r'[()]', raw_text[pos:])
+
+                if paren_search:
+                    paren_abs = pos + paren_search.start()
+                    stop = min(next_move.start(), paren_abs) if next_move else paren_abs
+                elif next_move:
+                    stop = next_move.start()
                 else:
                     text_content = raw_text[pos:]
                     if text_content.strip():
                         tokens.append(TextToken(text_content.strip()))
                     break
+
+                text_content = raw_text[pos:stop]
+                if text_content.strip():
+                    tokens.append(TextToken(text_content.strip()))
+                pos = stop
+                last_was_white = False
 
             return tokens
 
@@ -259,12 +286,25 @@ class NotationParser:
         # Tokenize
         tokens = tokenize(text)
 
+        # Variation stack: each entry saves (current_node, main_line_leaf) at the
+        # point where '(' was encountered so ')' can restore the context exactly.
+        variation_stack = []
+
         # Process each token
         for token_idx, token in enumerate(tokens):
+            if isinstance(token, VariationStartToken):
+                variation_stack.append((current_node, main_line_leaf))
+                continue
+
+            if isinstance(token, VariationEndToken):
+                if variation_stack:
+                    current_node, main_line_leaf = variation_stack.pop()
+                continue
+
             if isinstance(token, TextToken):
                 comment = re.sub(r'\s+', ' ', token.text)
                 comment = comment.replace('{', '(').replace('}', ')')
-                if len(comment) < 3000:
+                if len(comment) < MAX_COMMENT_LENGTH:
                     current_node.comment = (current_node.comment + " " + comment).strip()
 
             elif isinstance(token, MoveToken):
@@ -325,7 +365,7 @@ class NotationParser:
                                             test_board.parse_san(next_san)
                                             chosen = (pnode, pmove)
                                             break
-                                        except:
+                                        except (chess.InvalidMoveError, chess.IllegalMoveError, chess.AmbiguousMoveError, ValueError):
                                             pass
 
                             # Then check others
@@ -338,7 +378,7 @@ class NotationParser:
                                             test_board.parse_san(next_san)
                                             chosen = (pnode, pmove)
                                             break
-                                        except:
+                                        except (chess.InvalidMoveError, chess.IllegalMoveError, chess.AmbiguousMoveError, ValueError):
                                             pass
 
                         if chosen:

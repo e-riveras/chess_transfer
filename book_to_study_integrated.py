@@ -10,150 +10,20 @@ Usage:
 """
 
 import argparse
-import re
+import os
 from pathlib import Path
 from typing import List, Dict, Optional
 import json
 
-try:
-    import berserk
-    import chess.pgn
-    from PyPDF2 import PdfReader
-    import ebooklib
-    from ebooklib import epub
-    from bs4 import BeautifulSoup
-    DEPS_AVAILABLE = True
-except ImportError:
-    DEPS_AVAILABLE = False
+import berserk
 
-
-class BookParser:
-    """Parse chess books from various formats"""
-    
-    @staticmethod
-    def parse_pdf(pdf_path: str) -> str:
-        """Extract text from PDF"""
-        reader = PdfReader(pdf_path)
-        text = ""
-        for page in reader.pages:
-            text += page.extract_text()
-        return text
-    
-    @staticmethod
-    def parse_epub(epub_path: str) -> str:
-        """Extract text from EPUB"""
-        book = epub.read_epub(epub_path)
-        text = ""
-        
-        for item in book.get_items():
-            if item.get_type() == ebooklib.ITEM_DOCUMENT:
-                soup = BeautifulSoup(item.get_content(), 'html.parser')
-                text += soup.get_text() + "\n\n"
-        
-        return text
-    
-    @staticmethod
-    def extract_chapters(text: str) -> List[Dict]:
-        """
-        Split text into logical chapters.
-        Assumes chapters start with headers like "Chapter N" or "## Title"
-        """
-        # Split by common chapter markers
-        chapter_pattern = r'(Chapter \d+|CHAPTER \d+|##\s+.+?)(?=\n)'
-        
-        chapters = []
-        parts = re.split(chapter_pattern, text)
-        
-        # Combine headers with their content
-        for i in range(1, len(parts), 2):
-            if i+1 < len(parts):
-                chapter_title = parts[i].strip()
-                chapter_content = parts[i+1].strip()
-                
-                if chapter_content:  # Skip empty chapters
-                    chapters.append({
-                        'title': chapter_title,
-                        'content': chapter_content
-                    })
-        
-        return chapters if chapters else [{'title': 'Full Book', 'content': text}]
-
-
-class NotationParser:
-    """Parse chess notation from text"""
-    
-    @staticmethod
-    def extract_games(text: str) -> List[str]:
-        """
-        Extract PGN-style notation from text.
-        Handles both inline notation and formal PGN.
-        """
-        games = []
-        
-        # Pattern for chess moves
-        move_pattern = r'(?:\d+\.+\s*)?(?:[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](?:=[QRBN])?|O-O-O|O-O)'
-        
-        # Find sequences of moves
-        lines = text.split('\n')
-        current_game = []
-        
-        for line in lines:
-            moves = re.findall(move_pattern, line)
-            if len(moves) >= 3:  # At least 3 moves to be considered a game
-                current_game.append(line)
-            elif current_game and not moves:
-                # End of game sequence
-                games.append('\n'.join(current_game))
-                current_game = []
-        
-        if current_game:
-            games.append('\n'.join(current_game))
-        
-        return games
-    
-    @staticmethod
-    def text_to_pgn(text: str, chapter_title: str) -> str:
-        """
-        Convert book text to PGN format.
-        Preserves comments and variations.
-        """
-        # Extract introduction/description
-        lines = text.split('\n')
-        intro_lines = []
-        game_lines = []
-        
-        for line in lines:
-            if re.search(r'\d+\.', line):  # Contains move numbers
-                game_lines.append(line)
-            else:
-                intro_lines.append(line)
-        
-        intro = ' '.join(intro_lines).strip()
-        game_text = ' '.join(game_lines)
-        
-        # Build PGN
-        pgn = f"""[Event "{chapter_title}"]
-[Site "Chess Book"]
-[White "Study"]
-[Black "Analysis"]
-
-"""
-        
-        if intro:
-            pgn += f"{{{intro}}}\n\n"
-        
-        pgn += game_text
-        
-        return pgn
+from chess_tools.study.converter import BookParser, NotationParser
 
 
 class LichessStudyUploader:
     """Upload chapters to Lichess study"""
     
     def __init__(self, api_token: str):
-        if not DEPS_AVAILABLE:
-            raise ImportError("Install: pip install berserk python-chess")
-        
         self.session = berserk.TokenSession(api_token)
         self.client = berserk.Client(session=self.session)
     
