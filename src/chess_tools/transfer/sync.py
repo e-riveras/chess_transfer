@@ -56,21 +56,31 @@ def run_sync_pipeline():
     for archive_url in archives:
         logger.info(f"Checking archive: {archive_url}")
         games = get_games_from_archive(archive_url, chesscom_username)
+
+        # Chess.com API returns games newest-first. Capture the latest game
+        # before reversing so the fallback analysis always targets the most
+        # recent game, not the oldest one in the archive.
+        if latest_candidate_game is None:
+            for g in games:
+                url_g = g.get('url', '')
+                pgn_g = g.get('pgn', '')
+                if url_g and pgn_g:
+                    gid = urlparse(url_g).path.rstrip('/').split('/')[-1]
+                    latest_candidate_game = {'id': gid, 'pgn': pgn_g}
+                    break
+
         games.reverse()
-        
+
         for game in games:
-            url = game.get('url') 
+            url = game.get('url')
             end_time = game.get('end_time')
             pgn = game.get('pgn')
             time_class = game.get('time_class')
-            
+
             if not url or not pgn:
                 continue
-                
+
             game_id = urlparse(url).path.rstrip('/').split('/')[-1]
-            
-            if latest_candidate_game is None:
-                latest_candidate_game = {'id': game_id, 'pgn': pgn}
             
             # --- STEP 1: IMPORT ---
             if game_id not in imported_ids:
