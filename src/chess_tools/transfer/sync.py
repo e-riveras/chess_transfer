@@ -57,11 +57,11 @@ def run_sync_pipeline():
         logger.info(f"Checking archive: {archive_url}")
         games = get_games_from_archive(archive_url, chesscom_username)
 
-        # Chess.com API returns games newest-first. Capture the latest game
-        # before reversing so the fallback analysis always targets the most
-        # recent game, not the oldest one in the archive.
+        # Chess.com API returns games oldest-first within each archive.
+        # After reversing, games are processed newest-first.
+        # Capture the latest game from the END of the pre-reverse list (= newest game).
         if latest_candidate_game is None:
-            for g in games:
+            for g in reversed(games):
                 url_g = g.get('url', '')
                 pgn_g = g.get('pgn', '')
                 if url_g and pgn_g:
@@ -124,8 +124,11 @@ def run_sync_pipeline():
                         if study_manager.add_game_to_study(study_id, pgn, chapter_name):
                             studied_ids.add(game_id)
                             actions_count += 1
-                            last_analyzable_pgn = pgn
-                            last_analyzable_id = game_id
+                            # Only capture the first new game (newest, since we process
+                            # newest-first) so analysis targets the most recent game.
+                            if last_analyzable_pgn is None:
+                                last_analyzable_pgn = pgn
+                                last_analyzable_id = game_id
                             time.sleep(STUDY_ADD_DELAY_SECONDS)
                 else:
                     logger.debug(f"Game {game_id} already in studied_ids.")
