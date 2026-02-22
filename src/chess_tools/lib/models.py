@@ -34,6 +34,10 @@ class CrucialMoment:
     game_result: str
     hero_color: Optional[chess.Color]
     explanation: Optional[str] = None
-    image_url: Optional[str] = None 
-    svg_content: Optional[str] = None 
+    image_url: Optional[str] = None
+    svg_content: Optional[str] = None
     tactical_alert: Optional[str] = None
+    refutation_line: str = ""
+    mate_in: Optional[int] = None
+    tactic_type: str = "unknown"
+    board_description: str = ""

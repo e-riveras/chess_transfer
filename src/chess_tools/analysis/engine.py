@@ -13,6 +13,81 @@ BLUNDER_THRESHOLD_CP = 250
 DECIDED_POSITION_CP = 500
 
 
+def describe_board(board: chess.Board, hero_color: chess.Color) -> str:
+    """Plain-English board summary to ground LLM context without FEN parsing."""
+    lines = []
+
+    piece_values = {chess.PAWN: 1, chess.KNIGHT: 3, chess.BISHOP: 3,
+                    chess.ROOK: 5, chess.QUEEN: 9}
+    hero_mat = sum(len(board.pieces(pt, hero_color)) * v for pt, v in piece_values.items())
+    opp_mat  = sum(len(board.pieces(pt, not hero_color)) * v for pt, v in piece_values.items())
+    diff = hero_mat - opp_mat
+    if diff == 0:
+        lines.append("Material: equal.")
+    elif diff > 0:
+        lines.append(f"Material: you are up {diff} point(s).")
+    else:
+        lines.append(f"Material: you are down {abs(diff)} point(s).")
+
+    undefended = []
+    for pt in [chess.KNIGHT, chess.BISHOP, chess.ROOK, chess.QUEEN]:
+        for sq in board.pieces(pt, hero_color):
+            if not board.is_attacked_by(hero_color, sq):
+                undefended.append(f"{chess.piece_name(pt).title()} on {chess.square_name(sq)}")
+    if undefended:
+        lines.append(f"Your undefended pieces: {', '.join(undefended)}.")
+
+    king_sq = board.king(hero_color)
+    if king_sq is not None:
+        f = chess.square_file(king_sq)
+        r = chess.square_rank(king_sq)
+        back_rank = 0 if hero_color == chess.WHITE else 7
+        if f >= 6:
+            lines.append("Your king is castled kingside.")
+        elif f <= 2:
+            lines.append("Your king is castled queenside.")
+        elif r == back_rank:
+            lines.append("Your king is in the center on the back rank.")
+        else:
+            lines.append("Your king is exposed / uncastled.")
+
+    return " ".join(lines)
+
+
+def classify_tactic(
+    board_after: chess.Board,
+    refutation_pv: list,
+    mate_in,
+    mover_color: chess.Color
+) -> str:
+    """Deterministically label the tactic type from the refutation line."""
+    if mate_in is not None and mate_in <= 5:
+        return "forced_mate"
+    if not refutation_pv:
+        return "unknown"
+
+    first_move = refutation_pv[0]
+
+    if board_after.is_capture(first_move):
+        captured = board_after.piece_at(first_move.to_square)
+        if captured and captured.color == mover_color:
+            if captured.piece_type == chess.PAWN:
+                return "hanging_pawn"
+            return "hanging_piece"
+
+    board_copy = board_after.copy()
+    board_copy.push(first_move)
+    attacked = sum(
+        1 for pt in [chess.QUEEN, chess.ROOK, chess.KNIGHT, chess.BISHOP, chess.KING]
+        for sq in board_copy.pieces(pt, mover_color)
+        if board_copy.is_attacked_by(not mover_color, sq)
+    )
+    if attacked >= 2:
+        return "fork"
+
+    return "positional"
+
+
 class ChessAnalyzer:
     """
     Wraps the Stockfish chess engine to analyze games and identify mistakes.
@@ -146,8 +221,27 @@ class ChessAnalyzer:
                 # --- Tactical Alert Logic ---
                 tactical_alert = None
                 
+                # Full refutation line: what the opponent can force after the blunder
+                refutation_pv = info_after.get("pv", [])
+                refutation_board = board_after.copy()
+                refutation_san_list = []
+                for move in refutation_pv[:4]:
+                    try:
+                        refutation_san_list.append(refutation_board.san(move))
+                        refutation_board.push(move)
+                    except Exception:
+                        break
+                refutation_line = " ".join(refutation_san_list)
+
+                # Mate detection from info_after
+                refutation_score = info_after["score"].pov(board_after.turn)
+                mate_in = abs(refutation_score.mate()) if refutation_score.is_mate() else None
+
+                tactic_type = classify_tactic(board_after.copy(), refutation_pv, mate_in, mover_color)
+                board_description = describe_board(board_before, mover_color)
+
                 # Check opponent's best response to the user's move (refutation)
-                refutation_move = info_after.get("pv", [None])[0]
+                refutation_move = refutation_pv[0] if refutation_pv else None
                 if refutation_move:
                     if board_after.is_capture(refutation_move):
                         # What piece is being captured?
@@ -198,7 +292,11 @@ class ChessAnalyzer:
                     game_result=metadata["Result"],
                     hero_color=hero_color,
                     tactical_alert=tactical_alert,
-                    image_url=image_url
+                    image_url=image_url,
+                    refutation_line=refutation_line,
+                    mate_in=mate_in,
+                    tactic_type=tactic_type,
+                    board_description=board_description,
                 )
                 
                 moments.append(moment)
