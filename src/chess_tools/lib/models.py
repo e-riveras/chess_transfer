@@ -41,3 +41,6 @@ class CrucialMoment:
     mate_in: Optional[int] = None
     tactic_type: str = "unknown"
     board_description: str = ""
+    moment_type: str = "blunder"        # "blunder" | "missed_chance" | "missed_mate"
+    severity: str = "minor"             # "critical" | "major" | "minor"
+    best_line: str = ""                 # SAN moves of best PV (for missed chances)

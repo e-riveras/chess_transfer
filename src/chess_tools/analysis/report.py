@@ -5,6 +5,7 @@ import html
 import logging
 from typing import List, Dict, Optional
 from chess_tools.lib.models import CrucialMoment
+from chess_tools.analysis.engine import TACTIC_LABELS, TACTIC_COLORS, MOMENT_TYPE_LABELS, SEVERITY_COLORS
 
 logger = logging.getLogger("chess_transfer")
 
@@ -42,30 +43,54 @@ def generate_markdown_report(moments: List[CrucialMoment], metadata: Dict[str, s
             logger.info(f"Report generated (empty): {output_path}")
             return
 
-        f.write(f"Found **{len(moments)}** crucial moments where evaluation dropped significantly.\n\n")
-        
+        blunder_count = sum(1 for m in moments if m.moment_type == "blunder")
+        missed_count = sum(1 for m in moments if m.moment_type in ("missed_chance", "missed_mate"))
+        f.write(f"Found **{len(moments)}** crucial moments")
+        if missed_count:
+            f.write(f" ({blunder_count} blunder{'s' if blunder_count != 1 else ''}, {missed_count} missed opportunity{'s' if missed_count != 1 else ''})")
+        f.write(".\n\n")
+
         for i, moment in enumerate(moments, 1):
             # Save SVG to file
             image_filename = f"{filename.replace('.md', '')}_moment_{i}.svg"
             image_path = os.path.join(images_dir, image_filename)
-            
+
             if moment.svg_content:
                 with open(image_path, "w") as img_file:
                     img_file.write(moment.svg_content)
-            
+
             # Relative path for Markdown
             relative_image_path = f"images/{image_filename}"
 
-            f.write(f"## Moment {i}\n\n")
+            type_label = MOMENT_TYPE_LABELS.get(moment.moment_type, "Blunder")
+            severity_label = moment.severity.upper()
+            tactic_label = TACTIC_LABELS.get(moment.tactic_type, moment.tactic_type)
+            is_missed = moment.moment_type in ("missed_chance", "missed_mate")
+            if is_missed:
+                tactic_label = f"Missed {tactic_label}"
+
+            f.write(f"## Moment {i} — {type_label} [{severity_label}]\n\n")
+            f.write(f"**Tactic:** {tactic_label}\n\n")
             f.write(f"![Position]({relative_image_path})\n\n")
             f.write(f"**FEN:** `{moment.fen}`\n\n")
-            f.write(f"- **You Played:** **{moment.move_played_san}** <span style='color:red'>❌ (Red Arrow)</span>\n")
-            f.write(f"- **Engine Best:** **{moment.best_move_san}** <span style='color:green'>✅ (Green Arrow)</span>\n")
-            f.write(f"- **Eval Swing:** {moment.eval_swing} cp\n")
-            f.write(f"- **Variation:** _{moment.pv_line}_\n\n")
-            
+
+            if is_missed:
+                f.write(f"- **You Played:** **{moment.move_played_san}**\n")
+                f.write(f"- **You Could Have Played:** **{moment.best_move_san}**\n")
+                f.write(f"- **Eval Swing:** {moment.eval_swing} cp\n")
+                if moment.best_line:
+                    f.write(f"- **Best Line:** _{moment.best_line}_\n\n")
+            else:
+                f.write(f"- **You Played:** **{moment.move_played_san}** <span style='color:red'>(Red Arrow)</span>\n")
+                f.write(f"- **Engine Best:** **{moment.best_move_san}** <span style='color:green'>(Green Arrow)</span>\n")
+                f.write(f"- **Eval Swing:** {moment.eval_swing} cp\n")
+                f.write(f"- **Variation:** _{moment.pv_line}_\n\n")
+
             if moment.tactical_alert:
-                f.write(f"> **⚠️ {moment.tactical_alert}**\n\n")
+                f.write(f"> **{moment.tactical_alert}**\n\n")
+
+            if moment.refutation_line:
+                f.write(f"**Refutation:** _{moment.refutation_line}_\n\n")
 
             f.write(f"### Coach Explanation\n")
             f.write(f"{moment.explanation}\n\n")
@@ -164,6 +189,37 @@ _HTML_STYLE = """
     .summary-section ul { padding-left: 20px; margin: 8px 0; }
     .summary-section li { margin-bottom: 4px; }
     .empty-msg { color: var(--muted-color); font-style: italic; margin-top: 20px; }
+    .severity-pill {
+        display: inline-block;
+        font-size: 0.7rem;
+        font-weight: bold;
+        padding: 2px 8px;
+        border-radius: 10px;
+        color: #fff;
+        margin-left: 8px;
+        vertical-align: middle;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    .tactic-badge {
+        display: inline-block;
+        font-size: 0.8rem;
+        font-weight: 600;
+        padding: 3px 10px;
+        border-radius: 6px;
+        color: #fff;
+        margin-bottom: 12px;
+    }
+    .best-line {
+        background: rgba(0, 102, 221, 0.15);
+        border-left: 4px solid #0066dd;
+        padding: 10px 14px;
+        margin-bottom: 12px;
+        border-radius: 0 6px 6px 0;
+        font-style: italic;
+        color: var(--accent-color);
+    }
+    .moment-type-label { font-size: 0.9rem; color: var(--muted-color); margin-left: 4px; }
 
     /* Index page styles */
     .report-grid {
@@ -240,11 +296,27 @@ def generate_html_report(moments: List[CrucialMoment], metadata: Dict[str, str],
     if not moments:
         parts.append('    <p class="empty-msg">No crucial moments (blunders/missed wins) detected for the hero in this game.</p>\n')
     else:
-        parts.append(f'    <p class="summary-count">Found <strong>{len(moments)}</strong> crucial moment{"s" if len(moments) != 1 else ""} where evaluation dropped significantly.</p>\n')
+        blunder_count = sum(1 for m in moments if m.moment_type == "blunder")
+        missed_count = sum(1 for m in moments if m.moment_type in ("missed_chance", "missed_mate"))
+        summary_text = f'Found <strong>{len(moments)}</strong> crucial moment{"s" if len(moments) != 1 else ""}'
+        if missed_count:
+            summary_text += f' ({blunder_count} blunder{"s" if blunder_count != 1 else ""}, {missed_count} missed opportunity{"s" if missed_count != 1 else ""})'
+        parts.append(f'    <p class="summary-count">{summary_text}.</p>\n')
 
         for i, moment in enumerate(moments, 1):
+            type_label = html.escape(MOMENT_TYPE_LABELS.get(moment.moment_type, "Blunder"))
+            severity_label = moment.severity.upper()
+            severity_color = SEVERITY_COLORS.get(moment.severity, "#7f8c8d")
+            tactic_label = TACTIC_LABELS.get(moment.tactic_type, moment.tactic_type)
+            tactic_color = TACTIC_COLORS.get(moment.tactic_type, "#7f8c8d")
+            is_missed = moment.moment_type in ("missed_chance", "missed_mate")
+            if is_missed:
+                tactic_label = f"Missed {tactic_label}"
+
             parts.append(f'    <div class="moment-card">\n')
-            parts.append(f'        <h2>Moment {i}</h2>\n')
+            parts.append(f'        <h2>Moment {i} <span class="moment-type-label">— {type_label}</span>'
+                         f' <span class="severity-pill" style="background:{severity_color}">{severity_label}</span></h2>\n')
+            parts.append(f'        <span class="tactic-badge" style="background:{tactic_color}">{html.escape(tactic_label)}</span>\n')
 
             if moment.svg_content:
                 parts.append(f'        <div class="board-svg">{moment.svg_content}</div>\n')
@@ -252,14 +324,24 @@ def generate_html_report(moments: List[CrucialMoment], metadata: Dict[str, str],
             parts.append(f'        <div class="fen">FEN: {html.escape(moment.fen)}</div>\n')
 
             parts.append('        <div class="move-info">\n')
-            parts.append(f'            <span class="move-played">You Played: {html.escape(moment.move_played_san)}</span><br>\n')
-            parts.append(f'            <span class="move-best">Engine Best: {html.escape(moment.best_move_san)}</span><br>\n')
+            if is_missed:
+                parts.append(f'            <span class="move-played">You Played: {html.escape(moment.move_played_san)}</span><br>\n')
+                parts.append(f'            <span class="move-best">You Could Have Played: {html.escape(moment.best_move_san)}</span><br>\n')
+            else:
+                parts.append(f'            <span class="move-played">You Played: {html.escape(moment.move_played_san)}</span><br>\n')
+                parts.append(f'            <span class="move-best">Engine Best: {html.escape(moment.best_move_san)}</span><br>\n')
             parts.append(f'            <span class="eval-swing">Eval Swing: {moment.eval_swing} cp</span><br>\n')
             parts.append(f'            <span class="variation">Variation: {html.escape(moment.pv_line)}</span>\n')
             parts.append('        </div>\n')
 
+            if is_missed and moment.best_line:
+                parts.append(f'        <div class="best-line">You could have played: {html.escape(moment.best_line)}</div>\n')
+
             if moment.tactical_alert:
                 parts.append(f'        <div class="tactical-alert">{html.escape(moment.tactical_alert)}</div>\n')
+
+            if moment.refutation_line and not is_missed:
+                parts.append(f'        <div class="variation" style="margin-bottom:12px">Refutation: {html.escape(moment.refutation_line)}</div>\n')
 
             if moment.explanation:
                 parts.append('        <div class="explanation">\n')

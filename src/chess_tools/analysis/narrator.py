@@ -28,19 +28,21 @@ class GoogleGeminiNarrator(AnalysisNarrator):
         self.model_name = 'gemini-2.0-flash'
 
     def explain_mistake(self, moment: CrucialMoment) -> str:
+        is_missed = moment.moment_type in ("missed_chance", "missed_mate")
+
         # Determine extra context
         context_note = ""
-        
+
         # Check for "Winning but Lost Eval" (Practical Trap)
         user_won = (moment.game_result == "1-0" and moment.hero_color == chess.WHITE) or \
                    (moment.game_result == "0-1" and moment.hero_color == chess.BLACK)
-        
+
         if user_won and moment.eval_after < -100:
             context_note = "\n**Context:** The user ultimately WON this game, but this move put them in a losing position engine-wise. Frame the commentary as: 'You were objectively lost here, but this move might have set a practical trap.'"
 
-        # Tactical Alert Logic for Prompt
+        # Tactical Alert Logic for Prompt (blunders only)
         tactical_instruction = ""
-        if moment.tactical_alert:
+        if moment.tactical_alert and not is_missed:
             tactical_instruction = (
                 f"TACTICAL ALERT: {moment.tactical_alert}\n"
                 f"CRITICAL INSTRUCTION: You MUST ignore generic positional advice. "
@@ -48,34 +50,62 @@ class GoogleGeminiNarrator(AnalysisNarrator):
                 f"Do not use soft language."
             )
 
-        prompt = (
-            f"You are a strict Chess Coach.\n\n"
-            f"POSITION (before the mistake):\n"
-            f"FEN: {moment.fen}\n"
-            f"{moment.board_description}\n\n"
-            f"WHAT HAPPENED:\n"
-            f"- Player played: {moment.move_played_san}\n"
-            f"- Eval swing: {moment.eval_swing} centipawns (negative = bad for player)\n"
-            f"- Current eval: {moment.eval_after} centipawns\n"
-            f"- Engine best move: {moment.best_move_san}\n"
-            f"- Best line after {moment.best_move_san}: {moment.pv_line}\n"
-            f"- Tactic type: {moment.tactic_type}\n"
-            f"- Game result: {moment.game_result}\n"
-            f"{context_note}\n"
-            f"{tactical_instruction}\n\n"
-            f"WHAT THE OPPONENT CAN FORCE AFTER {moment.move_played_san}:\n"
-            f"{moment.refutation_line if moment.refutation_line else 'unclear'}\n"
-            f"{f'This leads to forced mate in {moment.mate_in}.' if moment.mate_in else ''}\n\n"
-            f"Task: Explain briefly why the player's move was a mistake and why "
-            f"{moment.best_move_san} is superior.\n\n"
-            f"Constraints:\n"
-            f"1. Reference the refutation moves by name (e.g. 'after Bxg3+...'). "
-            f"Do NOT invent moves beyond those listed in the refutation line above.\n"
-            f"2. Do NOT use conversational filler ('Okay', 'Let's look at', 'In this position').\n"
-            f"3. Start IMMEDIATELY with the chess concept or piece name.\n"
-            f"4. Be direct. Example: 'Rc2 walks into Bxg3+, exploiting the exposed king on h2...'\n"
-            f"5. Do NOT calculate variations yourself beyond what the engine data provides."
-        )
+        if is_missed:
+            # Missed chance / missed mate prompt
+            mate_note = f"You had a forced mate in {moment.mate_in}." if moment.mate_in and moment.moment_type == "missed_mate" else ""
+            prompt = (
+                f"You are an encouraging Chess Coach highlighting a missed opportunity.\n\n"
+                f"POSITION (before the move):\n"
+                f"FEN: {moment.fen}\n"
+                f"{moment.board_description}\n\n"
+                f"WHAT HAPPENED:\n"
+                f"- Player played: {moment.move_played_san} (a neutral/safe move)\n"
+                f"- But the engine found a much stronger continuation: {moment.best_move_san}\n"
+                f"- Best line: {moment.best_line}\n"
+                f"- Eval swing: {moment.eval_swing} centipawns (opportunity cost)\n"
+                f"- Tactic type: {moment.tactic_type}\n"
+                f"- Game result: {moment.game_result}\n"
+                f"{mate_note}\n"
+                f"{context_note}\n\n"
+                f"Task: Explain what the player missed. Frame this as an opportunity, not a mistake. "
+                f"Show what {moment.best_move_san} would have achieved.\n\n"
+                f"Constraints:\n"
+                f"1. Reference the best line moves by name. Do NOT invent moves beyond those listed.\n"
+                f"2. Do NOT use conversational filler.\n"
+                f"3. Start with what the player could have done (e.g. '{moment.best_move_san} wins material because...').\n"
+                f"4. Be encouraging but specific. Frame as 'You had a chance to...' not 'You blundered.'\n"
+                f"5. Do NOT calculate variations yourself beyond what the engine data provides."
+            )
+        else:
+            # Standard blunder prompt
+            prompt = (
+                f"You are a strict Chess Coach.\n\n"
+                f"POSITION (before the mistake):\n"
+                f"FEN: {moment.fen}\n"
+                f"{moment.board_description}\n\n"
+                f"WHAT HAPPENED:\n"
+                f"- Player played: {moment.move_played_san}\n"
+                f"- Eval swing: {moment.eval_swing} centipawns (negative = bad for player)\n"
+                f"- Current eval: {moment.eval_after} centipawns\n"
+                f"- Engine best move: {moment.best_move_san}\n"
+                f"- Best line after {moment.best_move_san}: {moment.pv_line}\n"
+                f"- Tactic type: {moment.tactic_type}\n"
+                f"- Game result: {moment.game_result}\n"
+                f"{context_note}\n"
+                f"{tactical_instruction}\n\n"
+                f"WHAT THE OPPONENT CAN FORCE AFTER {moment.move_played_san}:\n"
+                f"{moment.refutation_line if moment.refutation_line else 'unclear'}\n"
+                f"{f'This leads to forced mate in {moment.mate_in}.' if moment.mate_in else ''}\n\n"
+                f"Task: Explain briefly why the player's move was a mistake and why "
+                f"{moment.best_move_san} is superior.\n\n"
+                f"Constraints:\n"
+                f"1. Reference the refutation moves by name (e.g. 'after Bxg3+...'). "
+                f"Do NOT invent moves beyond those listed in the refutation line above.\n"
+                f"2. Do NOT use conversational filler ('Okay', 'Let's look at', 'In this position').\n"
+                f"3. Start IMMEDIATELY with the chess concept or piece name.\n"
+                f"4. Be direct. Example: 'Rc2 walks into Bxg3+, exploiting the exposed king on h2...'\n"
+                f"5. Do NOT calculate variations yourself beyond what the engine data provides."
+            )
         try:
             response = self.client.models.generate_content(
                 model=self.model_name, contents=prompt
@@ -111,6 +141,12 @@ class GoogleGeminiNarrator(AnalysisNarrator):
 class MockNarrator(AnalysisNarrator):
     """Mock narrator for testing without API keys."""
     def explain_mistake(self, moment: CrucialMoment) -> str:
+        if moment.moment_type in ("missed_chance", "missed_mate"):
+            best = f" Best line: {moment.best_line}." if moment.best_line else ""
+            return (
+                f"[Mock] You missed {moment.tactic_type} with {moment.best_move_san} "
+                f"(eval swing: {moment.eval_swing}cp).{best}"
+            )
         refutation = f" Opponent can play {moment.refutation_line}." if moment.refutation_line else ""
         return (
             f"[Mock] {moment.move_played_san} drops eval by {moment.eval_swing}cp "
