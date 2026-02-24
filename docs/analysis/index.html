@@ -71,6 +71,37 @@
     .summary-section ul { padding-left: 20px; margin: 8px 0; }
     .summary-section li { margin-bottom: 4px; }
     .empty-msg { color: var(--muted-color); font-style: italic; margin-top: 20px; }
+    .severity-pill {
+        display: inline-block;
+        font-size: 0.7rem;
+        font-weight: bold;
+        padding: 2px 8px;
+        border-radius: 10px;
+        color: #fff;
+        margin-left: 8px;
+        vertical-align: middle;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    .tactic-badge {
+        display: inline-block;
+        font-size: 0.8rem;
+        font-weight: 600;
+        padding: 3px 10px;
+        border-radius: 6px;
+        color: #fff;
+        margin-bottom: 12px;
+    }
+    .best-line {
+        background: rgba(0, 102, 221, 0.15);
+        border-left: 4px solid #0066dd;
+        padding: 10px 14px;
+        margin-bottom: 12px;
+        border-radius: 0 6px 6px 0;
+        font-style: italic;
+        color: var(--accent-color);
+    }
+    .moment-type-label { font-size: 0.9rem; color: var(--muted-color); margin-left: 4px; }
 
     /* Index page styles */
     .report-grid {
@@ -97,6 +128,11 @@
     <h1>Analysis Reports</h1>
     <div class="meta">Game analysis with Stockfish engine and AI coach explanations.</div>
     <div class="report-grid">
+        <a href="2026-02-24_erivera90_vs_m1a7n2i9.html" class="report-card">
+            <h3>erivera90 vs m1a7n2i9</h3>
+            <div class="card-meta">2026.02.24 &middot; 0-1</div>
+            <div class="card-moments">3 crucial moments</div>
+        </a>
         <a href="2026-02-23_erivera90_vs_lafleurroi.html" class="report-card">
             <h3>erivera90 vs lafleurroi</h3>
             <div class="card-meta">2026.02.23 &middot; 1-0</div>
