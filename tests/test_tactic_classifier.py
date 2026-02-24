@@ -127,35 +127,52 @@ class TestClassifyTactic:
 # ---------------------------------------------------------------------------
 
 class TestClassifyMoment:
-    def test_blunder_large_negative_delta(self):
-        result = classify_moment(cp_before=0, cp_after=-300, best_mate_in=None, played_mate_in=None)
-        assert result == "blunder"
+    def test_blunder_position_collapses(self):
+        # Position goes from +50 to -300 (played_eval < -100, swing >= 250)
+        result = classify_moment(best_eval=50, played_eval=-300, best_mate_in=None, played_mate_in=None)
+        assert result is not None
+        assert result[0] == "blunder"
+        assert result[1] == "major"
 
     def test_missed_mate_short(self):
         # Had mate in 3 but didn't play it
-        result = classify_moment(cp_before=10000, cp_after=200, best_mate_in=3, played_mate_in=None)
-        assert result == "missed_mate"
+        result = classify_moment(best_eval=10000, played_eval=200, best_mate_in=3, played_mate_in=None)
+        assert result is not None
+        assert result[0] == "missed_mate"
+        assert result[1] == "critical"
 
     def test_missed_mate_still_mates(self):
         # Had mate in 3, played mate in 5 — still finding mate, so not missed
-        result = classify_moment(cp_before=10000, cp_after=10000, best_mate_in=3, played_mate_in=5)
-        assert result == "blunder"  # delta = 0, not < -threshold, falls through
+        result = classify_moment(best_eval=10000, played_eval=10000, best_mate_in=3, played_mate_in=5)
+        # played_mate_in is not None, so missed_mate doesn't trigger; delta=0 so nothing triggers
+        assert result is None
 
     def test_missed_chance(self):
-        # Winning position (+300), played neutral move losing 200cp
-        result = classify_moment(cp_before=300, cp_after=100, best_mate_in=None, played_mate_in=None)
-        assert result == "missed_chance"
+        # Winning position (+500), played neutral move keeping +200 (swing=300, played_eval >= -100)
+        result = classify_moment(best_eval=500, played_eval=200, best_mate_in=None, played_mate_in=None)
+        assert result is not None
+        assert result[0] == "missed_chance"
+        assert result[1] == "major"
 
-    def test_small_delta_no_flag(self):
-        # Small delta, not winning enough for missed_chance
-        result = classify_moment(cp_before=100, cp_after=50, best_mate_in=None, played_mate_in=None)
-        assert result == "blunder"  # falls through to default
+    def test_below_threshold_no_flag(self):
+        # Small swing, position stays fine — not flagged
+        result = classify_moment(best_eval=100, played_eval=50, best_mate_in=None, played_mate_in=None)
+        assert result is None
 
-    def test_missed_mate_longer(self):
+    def test_missed_mate_beyond_threshold(self):
         # Had mate in 8 (> MISSED_MATE_MOVES=5) but didn't play it
-        result = classify_moment(cp_before=10000, cp_after=200, best_mate_in=8, played_mate_in=None)
-        # best_mate_in=8 > 5, skips first case. delta = -9800 < -250, so blunder fires.
-        assert result == "blunder"
+        # Swing is huge but played_eval is +200 (not < -100), so blunder check fails.
+        # best_eval >= WINNING_THRESHOLD and swing >= MISSED_CHANCE_CP, played_eval >= -100 => missed_chance
+        result = classify_moment(best_eval=10000, played_eval=200, best_mate_in=8, played_mate_in=None)
+        assert result is not None
+        assert result[0] == "missed_chance"
+
+    def test_large_swing_but_still_positive(self):
+        # best=600, played=200, swing=400. played_eval >= -100, best_eval >= 200 => missed_chance
+        result = classify_moment(best_eval=600, played_eval=200, best_mate_in=None, played_mate_in=None)
+        assert result is not None
+        assert result[0] == "missed_chance"
+        assert result[1] == "major"
 
 
 # ---------------------------------------------------------------------------

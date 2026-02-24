@@ -62,24 +62,25 @@ def run_analysis_pipeline(pgn_file_path: str = "game.pgn"):
         with ChessAnalyzer(stockfish_path) as analyzer:
             logger.info(f"Starting Engine Analysis for hero: {lichess_username}...")
             # Pass username to filter blunders
-            moments, metadata = analyzer.analyze_game(pgn_text, hero_username=lichess_username)
-            
+            moments, metadata, move_evals = analyzer.analyze_game(pgn_text, hero_username=lichess_username)
+
             logger.info(f"Engine Analysis complete. Found {len(moments)} moments. Starting LLM narration...")
-            
+
             explanations = []
             for moment in moments:
                 explanation = narrator.explain_mistake(moment)
                 moment.explanation = explanation
                 explanations.append(explanation)
-            
+
             summary = narrator.summarize_game(explanations)
-            
+
             output_dir = get_output_dir("analysis")
-            
+
             generate_markdown_report(moments, metadata, output_dir=output_dir, summary=summary)
 
             html_dir = str(get_repo_root() / "docs" / "analysis")
-            generate_html_report(moments, metadata, output_dir=html_dir, summary=summary)
+            generate_html_report(moments, metadata, output_dir=html_dir, summary=summary,
+                                 move_evals=move_evals)
             regenerate_index_page(html_dir)
             
     except Exception as e:

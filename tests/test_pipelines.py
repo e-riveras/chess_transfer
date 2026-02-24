@@ -167,7 +167,7 @@ class TestSyncGames(unittest.TestCase):
             mock_analyzer_instance = mock_analyzer.return_value
             mock_analyzer_instance.__enter__.return_value = mock_analyzer_instance
             # Return empty moments list for simplicity in test
-            mock_analyzer_instance.analyze_game.return_value = ([], {"White": "me", "Black": "you", "Date": "2025.01.01", "Event": "?", "Site": "?"})
+            mock_analyzer_instance.analyze_game.return_value = ([], {"White": "me", "Black": "you", "Date": "2025.01.01", "Event": "?", "Site": "?"}, [])
 
             run_sync_pipeline()
 

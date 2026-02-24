@@ -183,14 +183,14 @@ def run_sync_pipeline():
                 
                 with ChessAnalyzer(stockfish_path) as analyzer:
                     logger.info(f"Starting analysis for {chesscom_username}")
-                    moments, metadata = analyzer.analyze_game(pgn_to_analyze, hero_username=chesscom_username)
-                    
+                    moments, metadata, move_evals = analyzer.analyze_game(pgn_to_analyze, hero_username=chesscom_username)
+
                     explanations = []
                     for moment in moments:
                         explanation = narrator.explain_mistake(moment)
                         moment.explanation = explanation
                         explanations.append(explanation)
-                    
+
                     summary = narrator.summarize_game(explanations)
 
                     output_dir = get_output_dir("analysis")
@@ -198,7 +198,8 @@ def run_sync_pipeline():
                     generate_markdown_report(moments, metadata, output_dir=output_dir, summary=summary)
 
                     html_dir = str(get_repo_root() / "docs" / "analysis")
-                    generate_html_report(moments, metadata, output_dir=html_dir, summary=summary)
+                    generate_html_report(moments, metadata, output_dir=html_dir, summary=summary,
+                                         move_evals=move_evals)
                     regenerate_index_page(html_dir)
 
                     logger.info("Analysis report generated.")

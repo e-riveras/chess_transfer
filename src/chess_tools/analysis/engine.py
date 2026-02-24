@@ -13,7 +13,7 @@ BLUNDER_THRESHOLD_CP = 250
 DECIDED_POSITION_CP = 500
 
 # Missed-chance thresholds
-MISSED_CHANCE_CP = 150          # min cp lost to count as a missed chance
+MISSED_CHANCE_CP = 200          # min cp lost to count as a missed chance
 WINNING_THRESHOLD = 200         # position must be ≥ this to qualify
 MISSED_MATE_MOVES = 5           # mate-in ≤ N that was missed
 
@@ -23,7 +23,7 @@ SEVERITY_MAJOR_CP = 300
 
 PIECE_VALUES = {
     chess.PAWN: 1, chess.KNIGHT: 3, chess.BISHOP: 3,
-    chess.ROOK: 5, chess.QUEEN: 9, chess.KING: 0,
+    chess.ROOK: 5, chess.QUEEN: 9, chess.KING: 100,
 }
 
 TACTIC_LABELS = {
@@ -42,18 +42,18 @@ TACTIC_LABELS = {
 }
 
 TACTIC_COLORS = {
-    "forced_mate": "#e74c3c",
-    "back_rank_mate": "#e74c3c",
-    "skewer": "#e67e22",
-    "pin": "#e67e22",
-    "discovered_attack": "#9b59b6",
-    "hanging_piece": "#f39c12",
-    "hanging_pawn": "#f1c40f",
-    "losing_exchange": "#e67e22",
-    "fork": "#3498db",
-    "trapped_piece": "#1abc9c",
-    "positional": "#95a5a6",
-    "unknown": "#7f8c8d",
+    "forced_mate": "#8b0000",
+    "back_rank_mate": "#cc0000",
+    "skewer": "#e65c00",
+    "pin": "#b8860b",
+    "discovered_attack": "#6a0dad",
+    "hanging_piece": "#c0392b",
+    "hanging_pawn": "#e67e22",
+    "losing_exchange": "#d4ac0d",
+    "fork": "#1a7a4a",
+    "trapped_piece": "#1a5276",
+    "positional": "#566573",
+    "unknown": "#aaaaaa",
 }
 
 MOMENT_TYPE_LABELS = {
@@ -63,9 +63,9 @@ MOMENT_TYPE_LABELS = {
 }
 
 SEVERITY_COLORS = {
-    "critical": "#e74c3c",
-    "major": "#e67e22",
-    "minor": "#f1c40f",
+    "critical": "#8b0000",
+    "major": "#c0392b",
+    "minor": "#d4ac0d",
 }
 
 
@@ -80,45 +80,48 @@ def _compute_severity(eval_swing: int) -> str:
 
 
 def classify_moment(
-    cp_before: int,
-    cp_after: int,
+    best_eval: int,
+    played_eval: int,
     best_mate_in: Optional[int],
     played_mate_in: Optional[int],
-) -> str:
+) -> Optional[Tuple[str, str]]:
     """
-    Determine whether a position is a blunder, missed_chance, or missed_mate.
+    Determine the moment type and severity.
+
+    All eval values are from the hero's perspective (positive = good for hero).
 
     Args:
-        cp_before: eval before move from mover's POV (engine best).
-        cp_after: eval after move from mover's POV.
+        best_eval: eval of best line from mover's POV (cp_before).
+        played_eval: eval after the played move from mover's POV (cp_after).
         best_mate_in: mate-in from engine's best line (before move), or None.
-        played_mate_in: mate-in from position after move, or None (opponent's POV negated).
+        played_mate_in: mate-in from position after move (mover's POV), or None.
 
     Returns:
-        "blunder", "missed_chance", or "missed_mate"
+        (moment_type, severity) tuple, or None if not flagged.
     """
-    delta = cp_after - cp_before
+    swing = best_eval - played_eval  # centipawns left on the table
 
-    # Case 1: Had a forced mate but didn't play it
-    if best_mate_in is not None and best_mate_in <= MISSED_MATE_MOVES and best_mate_in > 0:
-        # Check that the mate was lost (played move doesn't also give mate)
-        if played_mate_in is None or played_mate_in <= 0:
-            return "missed_mate"
+    # Missed mate (highest priority)
+    if (best_mate_in is not None
+            and best_mate_in <= MISSED_MATE_MOVES
+            and best_mate_in > 0
+            and played_mate_in is None):
+        severity = _compute_severity(swing)
+        return ("missed_mate", severity)
 
-    # Case 2: Large negative delta = blunder
-    if delta < -BLUNDER_THRESHOLD_CP:
-        return "blunder"
+    # Blunder (position goes from okay/good to bad)
+    if swing >= BLUNDER_THRESHOLD_CP and played_eval < -100:
+        severity = _compute_severity(swing)
+        return ("blunder", severity)
 
-    # Case 3: Had a winning position but played a neutral/suboptimal move
-    if cp_before >= WINNING_THRESHOLD and delta < -MISSED_CHANCE_CP:
-        return "missed_chance"
+    # Missed chance (strong opportunity not taken, but no collapse)
+    if (swing >= MISSED_CHANCE_CP
+            and best_eval >= WINNING_THRESHOLD
+            and played_eval >= -100):
+        severity = _compute_severity(swing)
+        return ("missed_chance", severity)
 
-    # Case 4: Missed mate with larger depth
-    if best_mate_in is not None and best_mate_in > 0:
-        if played_mate_in is None or played_mate_in <= 0:
-            return "missed_mate"
-
-    return "blunder"
+    return None
 
 
 def describe_board(board: chess.Board, hero_color: chess.Color) -> str:
@@ -423,7 +426,7 @@ class ChessAnalyzer:
             return MATE_SCORE_CP if score.mate() > 0 else -MATE_SCORE_CP
         return score.score(mate_score=MATE_SCORE_CP)
 
-    def analyze_game(self, pgn_text: str, hero_username: str = None, threshold: int = BLUNDER_THRESHOLD_CP) -> Tuple[List[CrucialMoment], Dict[str, str]]:
+    def analyze_game(self, pgn_text: str, hero_username: str = None, threshold: int = BLUNDER_THRESHOLD_CP) -> Tuple[List[CrucialMoment], Dict[str, str], List[Dict[str, Any]]]:
         """
         Iterates through the game moves and identifies crucial moments.
 
@@ -433,15 +436,18 @@ class ChessAnalyzer:
             threshold (int): Centipawn loss required to flag a move as a mistake.
 
         Returns:
-            Tuple[List[CrucialMoment], Dict[str, str]]: A list of moments and the game metadata.
+            Tuple of (moments, metadata, move_evals):
+                moments: List of CrucialMoment objects.
+                metadata: Game metadata dict.
+                move_evals: Per-half-move eval list for chart/PGN annotation.
         """
         import io
         import chess.pgn
-        
+
         game = chess.pgn.read_game(io.StringIO(pgn_text))
         if not game:
             logger.error("Could not parse PGN.")
-            return [], {}
+            return [], {}, []
 
         # Extract Metadata
         headers = game.headers
@@ -465,41 +471,65 @@ class ChessAnalyzer:
                 logger.warning(f"Hero {hero_username} not found in players: {metadata['White']} vs {metadata['Black']}")
 
         moments = []
+        move_evals: List[Dict[str, Any]] = []
+        # Map half_move_number -> index in moments list (for linking chart markers)
+        moment_half_moves: Dict[int, int] = {}
+        half_move_num = 0
 
         for node in game.mainline():
             if not self.engine:
                 break
 
-            # board_before: the position the mover was facing (before their move).
-            # node.parent.board() replays from root each call — always correct.
             board_before = node.parent.board()
             mover_color = board_before.turn
+            half_move_num += 1
 
-            # Filter: Only analyze moves made by the hero
+            # Always analyze both sides for eval tracking (chart needs all moves)
+            info_before = self.engine.analyse(board_before, chess.engine.Limit(time=self.time_limit))
+            score_before_white = info_before["score"].white()
+            cp_white_before = self._score_to_cp(score_before_white)
+
+            score_before = info_before["score"].pov(mover_color)
+            cp_before = self._score_to_cp(score_before)
+
+            board_after = node.board()
+            info_after = self.engine.analyse(board_after, chess.engine.Limit(time=self.time_limit))
+
+            # Eval after move from White's perspective (for chart)
+            score_after_white = info_after["score"].white()
+            cp_white_after = self._score_to_cp(score_after_white)
+
+            # Mate-in from White's perspective
+            mate_in_white = None
+            if score_after_white.is_mate() and score_after_white.mate() is not None:
+                mate_in_white = score_after_white.mate()
+
+            # Record per-move eval (from White's perspective for chart/PGN)
+            move_eval_entry = {
+                "half_move": half_move_num,
+                "san": node.san(),
+                "eval_cp": cp_white_after,
+                "mate_in": mate_in_white,
+                "is_white": mover_color == chess.WHITE,
+            }
+            move_evals.append(move_eval_entry)
+
+            # Filter: Only flag moments for hero's moves
             if hero_color is not None and mover_color != hero_color:
                 continue
 
-            # 1. Analyze Position BEFORE the move (Best Play)
-            info_before = self.engine.analyse(board_before, chess.engine.Limit(time=self.time_limit))
-            score_before = info_before["score"].pov(mover_color)
-            cp_before = self._score_to_cp(score_before)
-            
             engine_best_move = info_before.get("pv", [None])[0]
             engine_best_move_san = board_before.san(engine_best_move) if engine_best_move else "N/A"
             engine_best_move_uci = engine_best_move.uci() if engine_best_move else "N/A"
-            
-            # 2. Analyze Position AFTER the user's move
-            board_after = node.board()
-            info_after = self.engine.analyse(board_after, chess.engine.Limit(time=self.time_limit))
-            
+
             # Score from mover's perspective (negate opponent's score)
             score_after_opponent = info_after["score"].pov(board_after.turn)
             cp_after = -self._score_to_cp(score_after_opponent)
 
-            # 3. Calculate Swing
+            # Calculate Swing
             delta = cp_after - cp_before
-            
-            # 4. Smart Filter (Context-Aware Mercy Rule)
+
+            # Smart Filter (Context-Aware Mercy Rule)
             is_decided_before = abs(cp_before) > DECIDED_POSITION_CP
             is_decided_after = abs(cp_after) > DECIDED_POSITION_CP
             same_result = (cp_before > 0 and cp_after > 0) or (cp_before < 0 and cp_after < 0)
@@ -507,7 +537,7 @@ class ChessAnalyzer:
             if is_decided_before and is_decided_after and same_result:
                 continue
 
-            # --- Detect best mate-in from before-move analysis ---
+            # Detect best mate-in from before-move analysis
             best_mate_in = None
             if score_before.is_mate() and score_before.mate() is not None and score_before.mate() > 0:
                 best_mate_in = score_before.mate()
@@ -518,133 +548,128 @@ class ChessAnalyzer:
             if score_after_mover.is_mate() and score_after_mover.mate() is not None and score_after_mover.mate() > 0:
                 played_mate_in = score_after_mover.mate()
 
-            # Determine moment type
-            moment_type = classify_moment(cp_before, cp_after, best_mate_in, played_mate_in)
+            # Determine moment type using new classify_moment (returns tuple or None)
+            moment_result = classify_moment(cp_before, cp_after, best_mate_in, played_mate_in)
 
-            is_blunder = delta < -threshold
-            is_missed = moment_type in ("missed_chance", "missed_mate") and not is_blunder
+            if moment_result is None:
+                continue
 
-            if not is_blunder and not is_missed:
-                # Also check: missed chance even if delta isn't past blunder threshold
-                if cp_before >= WINNING_THRESHOLD and delta < -MISSED_CHANCE_CP:
-                    is_missed = True
-                    moment_type = "missed_chance"
-                elif best_mate_in is not None and best_mate_in > 0 and (played_mate_in is None or played_mate_in <= 0):
-                    is_missed = True
-                    moment_type = "missed_mate"
+            moment_type, severity = moment_result
 
-            if is_blunder or is_missed:
-                # PV Line (engine's best continuation from before move)
-                pv_moves = info_before.get("pv", [])
-                dummy_board = board_before.copy()
-                pv_san_list = []
-                for move in pv_moves[:4]:
-                    pv_san_list.append(dummy_board.san(move))
-                    dummy_board.push(move)
-                pv_line = " ".join(pv_san_list)
+            # PV Line (engine's best continuation from before move)
+            pv_moves = info_before.get("pv", [])
+            dummy_board = board_before.copy()
+            pv_san_list = []
+            for move in pv_moves[:4]:
+                pv_san_list.append(dummy_board.san(move))
+                dummy_board.push(move)
+            pv_line = " ".join(pv_san_list)
 
-                # Best line SAN (for missed chances)
-                best_line = pv_line  # same as pv_line
+            best_line = pv_line
 
-                # --- Tactical Alert Logic ---
-                tactical_alert = None
+            # Tactical Alert Logic
+            tactical_alert = None
 
-                # Full refutation line: what the opponent can force after the blunder
-                refutation_pv = info_after.get("pv", [])
-                refutation_board = board_after.copy()
-                refutation_san_list = []
-                for move in refutation_pv[:4]:
-                    try:
-                        refutation_san_list.append(refutation_board.san(move))
-                        refutation_board.push(move)
-                    except Exception:
-                        break
-                refutation_line = " ".join(refutation_san_list)
+            # Full refutation line
+            refutation_pv = info_after.get("pv", [])
+            refutation_board = board_after.copy()
+            refutation_san_list = []
+            for move in refutation_pv[:4]:
+                try:
+                    refutation_san_list.append(refutation_board.san(move))
+                    refutation_board.push(move)
+                except Exception:
+                    break
+            refutation_line = " ".join(refutation_san_list)
 
-                # Mate detection from info_after
-                refutation_score = info_after["score"].pov(board_after.turn)
-                mate_in = abs(refutation_score.mate()) if refutation_score.is_mate() else None
+            # Mate detection from info_after
+            refutation_score = info_after["score"].pov(board_after.turn)
+            mate_in = abs(refutation_score.mate()) if refutation_score.is_mate() else None
 
-                # Tactic classification
-                if is_blunder:
-                    tactic_type = classify_tactic(board_after.copy(), refutation_pv, mate_in, mover_color)
-                else:
-                    # For missed chances, classify based on engine's best PV (what could have been played)
-                    opp_color = not mover_color
-                    best_pv = info_before.get("pv", [])
-                    tactic_type = classify_tactic(board_before.copy(), best_pv, best_mate_in, opp_color)
+            is_blunder = moment_type == "blunder"
 
-                severity = _compute_severity(delta)
-                board_description = describe_board(board_before, mover_color)
+            # Tactic classification
+            if is_blunder:
+                tactic_type = classify_tactic(board_after.copy(), refutation_pv, mate_in, mover_color)
+            else:
+                opp_color = not mover_color
+                best_pv = info_before.get("pv", [])
+                tactic_type = classify_tactic(board_before.copy(), best_pv, best_mate_in, opp_color)
 
-                # Check opponent's best response to the user's move (refutation) — only for blunders
-                if is_blunder:
-                    refutation_move = refutation_pv[0] if refutation_pv else None
-                    if refutation_move:
-                        if board_after.is_capture(refutation_move):
-                            captured_piece = board_after.piece_at(refutation_move.to_square)
-                            if captured_piece and captured_piece.color == mover_color:
-                                piece_name = chess.piece_name(captured_piece.piece_type).title()
-                                color_name = "White" if mover_color == chess.WHITE else "Black"
-                                square_name = chess.square_name(refutation_move.to_square)
-                                tactical_alert = f"CRITICAL: Your move allowed the opponent to immediately capture your {color_name} {piece_name} on {square_name}."
+            board_description = describe_board(board_before, mover_color)
 
-                # --- Generate SVG with Arrows ---
-                arrows = []
-                if is_blunder:
-                    # Arrow for the move played (Mistake) - Red
-                    arrows.append(chess.svg.Arrow(node.move.from_square, node.move.to_square, color="#d40000cc"))
-                else:
-                    # Arrow for the move played (Neutral) - Yellow
-                    arrows.append(chess.svg.Arrow(node.move.from_square, node.move.to_square, color="#ccaa00cc"))
+            # Tactical alert (blunders only)
+            if is_blunder:
+                refutation_move = refutation_pv[0] if refutation_pv else None
+                if refutation_move:
+                    if board_after.is_capture(refutation_move):
+                        captured_piece = board_after.piece_at(refutation_move.to_square)
+                        if captured_piece and captured_piece.color == mover_color:
+                            piece_name = chess.piece_name(captured_piece.piece_type).title()
+                            color_name = "White" if mover_color == chess.WHITE else "Black"
+                            square_name = chess.square_name(refutation_move.to_square)
+                            tactical_alert = f"CRITICAL: Your move allowed the opponent to immediately capture your {color_name} {piece_name} on {square_name}."
 
-                # Arrow for the best move (Engine) - Green for blunders, Blue for missed chances
-                if engine_best_move:
-                    arrow_color = "#008800cc" if is_blunder else "#0066ddcc"
-                    arrows.append(chess.svg.Arrow(engine_best_move.from_square, engine_best_move.to_square, color=arrow_color))
+            # Generate SVG with Arrows
+            arrows = []
+            if is_blunder:
+                arrows.append(chess.svg.Arrow(node.move.from_square, node.move.to_square, color="#d40000cc"))
+            else:
+                arrows.append(chess.svg.Arrow(node.move.from_square, node.move.to_square, color="#ccaa00cc"))
 
-                # Orientation: View from Hero's perspective
-                orientation = hero_color if hero_color is not None else chess.WHITE
+            if engine_best_move:
+                arrow_color = "#008800cc" if is_blunder else "#0066ddcc"
+                arrows.append(chess.svg.Arrow(engine_best_move.from_square, engine_best_move.to_square, color=arrow_color))
 
-                svg_data = chess.svg.board(
-                    board=board_before,
-                    arrows=arrows,
-                    orientation=orientation,
-                    size=400,
-                    coordinates=True
-                )
+            orientation = hero_color if hero_color is not None else chess.WHITE
 
-                # Image URL (Legacy support / backup)
-                fen_encoded = urllib.parse.quote(board_before.fen())
-                color_str = "white" if orientation == chess.WHITE else "black"
-                image_url = f"https://lichess.org/export/fen.gif?fen={fen_encoded}&color={color_str}"
+            svg_data = chess.svg.board(
+                board=board_before,
+                arrows=arrows,
+                orientation=orientation,
+                size=400,
+                coordinates=True
+            )
 
-                moment = CrucialMoment(
-                    fen=board_before.fen(),
-                    move_played_san=node.san(),
-                    move_played_uci=node.move.uci(),
-                    best_move_san=engine_best_move_san,
-                    best_move_uci=engine_best_move_uci,
-                    eval_swing=delta,
-                    eval_after=cp_after,
-                    pv_line=pv_line,
-                    explanation=None,
-                    svg_content=svg_data,
-                    game_result=metadata["Result"],
-                    hero_color=hero_color,
-                    tactical_alert=tactical_alert,
-                    image_url=image_url,
-                    refutation_line=refutation_line if is_blunder else "",
-                    mate_in=mate_in,
-                    tactic_type=tactic_type,
-                    board_description=board_description,
-                    moment_type=moment_type,
-                    severity=severity,
-                    best_line=best_line if not is_blunder else "",
-                )
+            fen_encoded = urllib.parse.quote(board_before.fen())
+            color_str = "white" if orientation == chess.WHITE else "black"
+            image_url = f"https://lichess.org/export/fen.gif?fen={fen_encoded}&color={color_str}"
 
-                moments.append(moment)
-                label = "Blunder" if is_blunder else "Missed chance"
-                logger.info(f"{label} found for {hero_username}: {moment.move_played_san} (Delta: {delta}, {moment_type}/{severity})")
+            moment = CrucialMoment(
+                fen=board_before.fen(),
+                move_played_san=node.san(),
+                move_played_uci=node.move.uci(),
+                best_move_san=engine_best_move_san,
+                best_move_uci=engine_best_move_uci,
+                eval_swing=delta,
+                eval_after=cp_after,
+                pv_line=pv_line,
+                explanation=None,
+                svg_content=svg_data,
+                game_result=metadata["Result"],
+                hero_color=hero_color,
+                tactical_alert=tactical_alert,
+                image_url=image_url,
+                refutation_line=refutation_line if is_blunder else "",
+                mate_in=mate_in,
+                tactic_type=tactic_type,
+                board_description=board_description,
+                moment_type=moment_type,
+                severity=severity,
+                best_line=best_line if not is_blunder else "",
+            )
 
-        return moments, metadata
+            moments.append(moment)
+            moment_half_moves[half_move_num] = len(moments) - 1
+            label = "Blunder" if is_blunder else "Missed chance"
+            logger.info(f"{label} found for {hero_username}: {moment.move_played_san} (Delta: {delta}, {moment_type}/{severity})")
+
+        # Tag move_evals with moment info for chart markers
+        for hm, idx in moment_half_moves.items():
+            for entry in move_evals:
+                if entry["half_move"] == hm:
+                    entry["moment_type"] = moments[idx].moment_type
+                    entry["moment_index"] = idx
+                    break
+
+        return moments, metadata, move_evals

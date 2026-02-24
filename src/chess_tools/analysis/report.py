@@ -3,9 +3,9 @@ import re
 import json
 import html
 import logging
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from chess_tools.lib.models import CrucialMoment
-from chess_tools.analysis.engine import TACTIC_LABELS, TACTIC_COLORS, MOMENT_TYPE_LABELS, SEVERITY_COLORS
+from chess_tools.analysis.engine import TACTIC_LABELS, TACTIC_COLORS, MOMENT_TYPE_LABELS, SEVERITY_COLORS, MATE_SCORE_CP
 
 logger = logging.getLogger("chess_transfer")
 
@@ -242,8 +242,214 @@ _HTML_STYLE = """
 """
 
 
+def generate_annotated_pgn(metadata: Dict[str, str],
+                           move_evals: List[Dict[str, Any]],
+                           moments: List[CrucialMoment]) -> str:
+    """
+    Generate PGN string with eval annotations at every move.
+
+    Args:
+        metadata: Game headers.
+        move_evals: Per-half-move eval list from analyze_game.
+        moments: List of critical moments for NAG/comment annotation.
+
+    Returns:
+        Complete PGN string with headers and annotated moves.
+    """
+    if not move_evals:
+        return ""
+
+    # Build moment lookup by half_move
+    moment_by_hm: Dict[int, CrucialMoment] = {}
+    for entry in move_evals:
+        if "moment_index" in entry:
+            moment_by_hm[entry["half_move"]] = moments[entry["moment_index"]]
+
+    lines = []
+    # Headers
+    for tag in ["Event", "Site", "Date", "White", "Black", "Result"]:
+        val = metadata.get(tag, "?")
+        lines.append(f'[{tag} "{val}"]')
+    lines.append("")
+
+    # Moves
+    move_parts = []
+    for entry in move_evals:
+        hm = entry["half_move"]
+        san = entry["san"]
+        is_white = entry["is_white"]
+
+        # Move number prefix
+        if is_white:
+            move_num = (hm + 1) // 2
+            prefix = f"{move_num}. "
+        else:
+            prefix = ""
+
+        # Eval comment
+        if entry["mate_in"] is not None:
+            mate_val = entry["mate_in"]
+            eval_str = f"#{mate_val}" if mate_val > 0 else f"#-{abs(mate_val)}"
+        else:
+            pawns = entry["eval_cp"] / 100
+            eval_str = f"{pawns:+.2f}"
+
+        # Check for moment annotation
+        nag = ""
+        moment_comment = ""
+        m = moment_by_hm.get(hm)
+        if m:
+            tactic_label = TACTIC_LABELS.get(m.tactic_type, m.tactic_type)
+            if m.moment_type == "blunder":
+                nag = " $4"
+                ref_move = m.refutation_line.split()[0] if m.refutation_line else ""
+                moment_comment = f" {tactic_label}"
+                if ref_move:
+                    moment_comment += f" · {ref_move}"
+            elif m.moment_type == "missed_mate":
+                nag = " $4"
+                best = m.best_move_san if m.best_move_san != "N/A" else ""
+                moment_comment = f" Missed Mate in {m.mate_in or '?'}"
+                if best:
+                    moment_comment += f" · best: {best}"
+            elif m.moment_type == "missed_chance":
+                nag = " $6"
+                best = m.best_move_san if m.best_move_san != "N/A" else ""
+                moment_comment = f" Missed {tactic_label}"
+                if best:
+                    moment_comment += f" · best: {best}"
+
+        comment = f"{{{eval_str}{moment_comment}}}"
+        move_parts.append(f"{prefix}{san}{nag} {comment}")
+
+    # Wrap at ~80 chars
+    result = metadata.get("Result", "*")
+    move_text = " ".join(move_parts) + f" {result}"
+    wrapped = []
+    current_line = ""
+    for word in move_text.split(" "):
+        if len(current_line) + len(word) + 1 > 80 and current_line:
+            wrapped.append(current_line)
+            current_line = word
+        else:
+            current_line = f"{current_line} {word}" if current_line else word
+    if current_line:
+        wrapped.append(current_line)
+
+    lines.append("\n".join(wrapped))
+    return "\n".join(lines)
+
+
+def generate_eval_chart_svg(move_evals: List[Dict[str, Any]],
+                            width: int = 800, height: int = 300) -> str:
+    """
+    Generate an inline SVG evaluation chart.
+
+    Args:
+        move_evals: Per-half-move eval list with eval_cp, mate_in, moment_type.
+        width: SVG width.
+        height: SVG height.
+
+    Returns:
+        SVG string to embed in the HTML report.
+    """
+    if not move_evals:
+        return ""
+
+    margin_left = 45
+    margin_right = 20
+    margin_top = 20
+    margin_bottom = 30
+    plot_w = width - margin_left - margin_right
+    plot_h = height - margin_top - margin_bottom
+    mid_y = margin_top + plot_h / 2
+    max_pawns = 8.0
+    n = len(move_evals)
+
+    def x_pos(i):
+        return margin_left + (i / max(n - 1, 1)) * plot_w
+
+    def y_pos(cp):
+        pawns = max(-max_pawns, min(max_pawns, cp / 100))
+        return mid_y - (pawns / max_pawns) * (plot_h / 2)
+
+    # Build eval points
+    points = []
+    for i, entry in enumerate(move_evals):
+        if entry["mate_in"] is not None:
+            cp = MATE_SCORE_CP if entry["mate_in"] > 0 else -MATE_SCORE_CP
+        else:
+            cp = entry["eval_cp"]
+        points.append((x_pos(i), y_pos(cp), cp, entry))
+
+    parts = []
+    parts.append(f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" '
+                 f'width="{width}" height="{height}" style="max-width:100%;height:auto;">')
+
+    # Background
+    parts.append(f'<rect x="0" y="0" width="{width}" height="{height}" fill="#1a1a2e" rx="8"/>')
+
+    # Fill regions — split the line at y=mid_y for White/Black advantage areas
+    # White advantage (above zero line) — light fill
+    line_coords = " ".join(f"{px},{py}" for px, py, _, _ in points)
+    # Closed polygon for above-zero fill
+    white_poly = f"M{margin_left},{mid_y} "
+    for px, py, cp, _ in points:
+        cy = min(py, mid_y)
+        white_poly += f"L{px},{cy} "
+    white_poly += f"L{points[-1][0]},{mid_y} Z"
+    parts.append(f'<path d="{white_poly}" fill="rgba(255,255,255,0.1)" />')
+
+    # Black advantage (below zero line) — dark fill
+    black_poly = f"M{margin_left},{mid_y} "
+    for px, py, cp, _ in points:
+        cy = max(py, mid_y)
+        black_poly += f"L{px},{cy} "
+    black_poly += f"L{points[-1][0]},{mid_y} Z"
+    parts.append(f'<path d="{black_poly}" fill="rgba(50,50,50,0.6)" />')
+
+    # Zero line
+    parts.append(f'<line x1="{margin_left}" y1="{mid_y}" x2="{margin_left + plot_w}" y2="{mid_y}" '
+                 f'stroke="#555" stroke-width="1" stroke-dasharray="4,4"/>')
+
+    # Eval line
+    polyline = " ".join(f"{px},{py}" for px, py, _, _ in points)
+    parts.append(f'<polyline points="{polyline}" fill="none" stroke="#4a9eff" stroke-width="2"/>')
+
+    # Y-axis labels
+    for label_val in [-8, -4, 0, 4, 8]:
+        ly = y_pos(label_val * 100)
+        parts.append(f'<text x="{margin_left - 5}" y="{ly + 4}" '
+                     f'text-anchor="end" fill="#888" font-size="11">'
+                     f'{label_val:+d}</text>')
+
+    # X-axis labels (every 5 full moves)
+    for i, entry in enumerate(move_evals):
+        if entry["is_white"]:
+            move_num = (entry["half_move"] + 1) // 2
+            if move_num % 5 == 0 or move_num == 1:
+                lx = x_pos(i)
+                parts.append(f'<text x="{lx}" y="{height - 5}" '
+                             f'text-anchor="middle" fill="#888" font-size="11">'
+                             f'{move_num}</text>')
+
+    # Critical moment markers
+    for px, py, cp, entry in points:
+        mt = entry.get("moment_type")
+        if mt == "blunder":
+            parts.append(f'<circle cx="{px}" cy="{py}" r="5" fill="#cc0000" stroke="#fff" stroke-width="1">'
+                         f'<title>{html.escape(entry["san"])} ({cp/100:+.1f}) Blunder</title></circle>')
+        elif mt in ("missed_chance", "missed_mate"):
+            parts.append(f'<circle cx="{px}" cy="{py}" r="5" fill="#d4ac0d" stroke="#fff" stroke-width="1">'
+                         f'<title>{html.escape(entry["san"])} ({cp/100:+.1f}) Missed</title></circle>')
+
+    parts.append('</svg>')
+    return "\n".join(parts)
+
+
 def generate_html_report(moments: List[CrucialMoment], metadata: Dict[str, str],
-                         output_dir: str = "docs/analysis", summary: Optional[str] = None):
+                         output_dir: str = "docs/analysis", summary: Optional[str] = None,
+                         move_evals: Optional[List[Dict[str, Any]]] = None):
     """
     Generates a self-contained HTML report with inline SVGs.
 
@@ -292,6 +498,15 @@ def generate_html_report(moments: List[CrucialMoment], metadata: Dict[str, str],
     <h1>Analysis: {white_esc} vs {black_esc}</h1>
     <div class="meta"><strong>Date:</strong> {date_esc} | <strong>Event:</strong> {event_esc} | <strong>Site:</strong> {site_esc}</div>
 """)
+
+    # Eval chart (above moments)
+    if move_evals:
+        chart_svg = generate_eval_chart_svg(move_evals)
+        if chart_svg:
+            parts.append('    <h2 style="margin-bottom:12px">Evaluation</h2>\n')
+            parts.append('    <div style="background:#2a2a3e;border-radius:8px;padding:16px;margin-bottom:24px;overflow-x:auto;">\n')
+            parts.append(f'        {chart_svg}\n')
+            parts.append('    </div>\n')
 
     if not moments:
         parts.append('    <p class="empty-msg">No crucial moments (blunders/missed wins) detected for the hero in this game.</p>\n')
@@ -355,6 +570,27 @@ def generate_html_report(moments: List[CrucialMoment], metadata: Dict[str, str],
         parts.append('    <div class="summary-section">\n')
         parts.append(f'        {_md_to_html(summary)}\n')
         parts.append('    </div>\n')
+
+    # Annotated PGN
+    if move_evals:
+        pgn_string = generate_annotated_pgn(metadata, move_evals, moments)
+        if pgn_string:
+            pgn_escaped = html.escape(pgn_string)
+            parts.append('    <h2 style="margin-top:24px;margin-bottom:12px">Annotated PGN</h2>\n')
+            parts.append('    <p style="font-size:0.85rem;color:#666;margin-bottom:8px">'
+                         'Copy this PGN to paste into Lichess, ChessBase, or any analysis tool.</p>\n')
+            parts.append("""    <div style="
+        background:#1a1a2e;color:#e0e0e0;padding:16px 20px;border-radius:8px;
+        font-family:'SF Mono','Fira Code','Consolas',monospace;font-size:0.8rem;
+        line-height:1.6;white-space:pre-wrap;word-break:break-word;position:relative;
+        max-height:400px;overflow-y:auto;">
+        <button onclick="navigator.clipboard.writeText(this.nextElementSibling.textContent)"
+            style="position:absolute;top:8px;right:8px;background:#333;color:#ccc;
+            border:1px solid #555;padding:4px 12px;border-radius:4px;cursor:pointer;
+            font-size:0.75rem;">Copy</button>
+""")
+            parts.append(f'        <code id="annotated-pgn">{pgn_escaped}</code>\n')
+            parts.append('    </div>\n')
 
     parts.append("""</div>
 </body>
