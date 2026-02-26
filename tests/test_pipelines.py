@@ -47,23 +47,25 @@ class TestSyncGames(unittest.TestCase):
     def test_import_game_to_lichess_success(self):
         mock_client = MagicMock()
         mock_client.games.import_game.return_value = {'url': 'http://lichess.org/game1'}
-        
-        status = import_game_to_lichess(mock_client, 'pgn_data')
+
+        status, url = import_game_to_lichess(mock_client, 'pgn_data')
         self.assertEqual(status, "IMPORTED")
+        self.assertEqual(url, "http://lichess.org/game1")
 
     def test_import_game_to_lichess_duplicate(self):
         mock_client = MagicMock()
-        
+
         class MockResponseError(berserk.exceptions.ResponseError):
             def __init__(self):
-                pass 
+                pass
             def __str__(self):
                 return "Game already imported"
-        
+
         mock_client.games.import_game.side_effect = MockResponseError()
 
-        status = import_game_to_lichess(mock_client, 'pgn_data')
+        status, url = import_game_to_lichess(mock_client, 'pgn_data')
         self.assertEqual(status, "DUPLICATE")
+        self.assertIsNone(url)
 
     def test_import_game_to_lichess_rate_limit(self):
         mock_client = MagicMock()
@@ -83,11 +85,12 @@ class TestSyncGames(unittest.TestCase):
             mock_429,
             {'url': 'http://lichess.org/retry_success'}
         ]
-        
+
         # Patch sleep in chess_tools.lib.api.lichess where import_game_to_lichess resides
         with patch('chess_tools.lib.api.lichess.time.sleep') as mock_sleep:
-            status = import_game_to_lichess(mock_client, 'pgn_data')
+            status, url = import_game_to_lichess(mock_client, 'pgn_data')
             self.assertEqual(status, "IMPORTED")
+            self.assertEqual(url, "http://lichess.org/retry_success")
             mock_sleep.assert_called_with(60)
             self.assertEqual(mock_client.games.import_game.call_count, 2)
 
@@ -114,6 +117,10 @@ class TestSyncGames(unittest.TestCase):
 
     # Test the Pipeline (Sync)
     # We patch modules where they are IMPORTED in chess_tools.transfer.sync
+    @patch('chess_tools.transfer.sync.save_analysis_history')
+    @patch('chess_tools.transfer.sync.update_analysis_history')
+    @patch('chess_tools.transfer.sync.format_history_for_prompt', return_value="")
+    @patch('chess_tools.transfer.sync.load_analysis_history', return_value={"games": [], "tactic_counts": {}, "total_blunders": 0, "total_missed": 0})
     @patch('chess_tools.transfer.sync.generate_markdown_report')
     @patch('chess_tools.transfer.sync.GoogleGeminiNarrator')
     @patch('chess_tools.transfer.sync.ChessAnalyzer')
@@ -125,7 +132,7 @@ class TestSyncGames(unittest.TestCase):
     @patch('chess_tools.transfer.sync.load_history')
     @patch('chess_tools.transfer.sync.save_history')
     @patch('chess_tools.transfer.sync.get_lichess_client')
-    def test_sync_pipeline(self, mock_get_client, mock_save_hist, mock_load_hist, mock_get_archives, mock_get_games, mock_import, mock_sleep, mock_study_manager_cls, mock_analyzer, mock_narrator, mock_report):
+    def test_sync_pipeline(self, mock_get_client, mock_save_hist, mock_load_hist, mock_get_archives, mock_get_games, mock_import, mock_sleep, mock_study_manager_cls, mock_analyzer, mock_narrator, mock_report, mock_load_analysis, mock_format_history, mock_update_analysis, mock_save_analysis):
         
         mock_load_hist.return_value = {"imported_ids": ["old_game_id"], "monthly_studies": {}, "studied_ids": []}
         
@@ -158,7 +165,7 @@ class TestSyncGames(unittest.TestCase):
                 }
             ]
             
-            mock_import.return_value = "IMPORTED"
+            mock_import.return_value = ("IMPORTED", "http://lichess.org/game1")
             
             mock_study_manager = mock_study_manager_cls.return_value
             mock_study_manager.find_study_by_name.return_value = "study_id_123"

@@ -93,24 +93,33 @@ def fetch_latest_game(username: str) -> Optional[str]:
         logger.error(f"Error fetching latest game: {e}")
         return None
 
-def import_game_to_lichess(client: berserk.Client, pgn: str) -> str:
+def import_game_to_lichess(client: berserk.Client, pgn: str) -> tuple:
     """
     Imports a PGN to Lichess.
     Handles rate limits by sleeping and retrying once.
+
+    Returns:
+        Tuple of (status, lichess_url) where status is one of
+        "IMPORTED", "DUPLICATE", "ERROR" and lichess_url is the
+        Lichess game URL on success (or None).
     """
+    lichess_url = None
+
     def attempt_import():
+        nonlocal lichess_url
         try:
             result = client.games.import_game(pgn)
-            logger.info(f"Successfully imported game: {result.get('url')}")
+            lichess_url = result.get('url')
+            logger.info(f"Successfully imported game: {lichess_url}")
             return "IMPORTED"
         except berserk.exceptions.ResponseError as e:
             if "Game already imported" in str(e):
                  logger.info("Game already imported (API check), skipping.")
                  return "DUPLICATE"
-            
+
             if e.status_code == 429 or "Too Many Requests" in str(e):
                 return "RATE_LIMIT"
-            
+
             logger.error(f"Failed to import game: {e}")
             return "ERROR"
         except Exception as e:
@@ -118,13 +127,13 @@ def import_game_to_lichess(client: berserk.Client, pgn: str) -> str:
             return "ERROR"
 
     status = attempt_import()
-    
+
     if status == "RATE_LIMIT":
         logger.warning("Rate limit reached (429). Sleeping for 60 seconds before retrying...")
         time.sleep(60)
         status = attempt_import()
         if status == "RATE_LIMIT":
             logger.error("Rate limit hit again after retry. Skipping this game.")
-            return "ERROR"
-            
-    return status
+            return ("ERROR", None)
+
+    return (status, lichess_url)

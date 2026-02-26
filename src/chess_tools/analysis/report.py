@@ -122,6 +122,28 @@ def _md_to_html(text: str) -> str:
     return escaped
 
 
+def format_refutation_line(line: str, hero_is_next_to_move: bool) -> str:
+    """
+    Wrap alternating SAN moves in hero/opponent color spans.
+
+    Args:
+        line: Space-separated SAN moves (e.g. "Bxg3+ Kh1 Qf2").
+        hero_is_next_to_move: If True, first move is hero's; otherwise opponent's.
+
+    Returns:
+        HTML string with alternating <span class="hero-move"> / <span class="opp-move">.
+    """
+    if not line:
+        return ""
+    moves = line.split()
+    parts = []
+    for i, move in enumerate(moves):
+        is_hero = (i % 2 == 0) == hero_is_next_to_move
+        cls = "hero-move" if is_hero else "opp-move"
+        parts.append(f'<span class="{cls}">{html.escape(move)}</span>')
+    return " ".join(parts)
+
+
 _HTML_STYLE = """
     :root {
         --bg-color: #1a1a1a;
@@ -220,6 +242,30 @@ _HTML_STYLE = """
         color: var(--accent-color);
     }
     .moment-type-label { font-size: 0.9rem; color: var(--muted-color); margin-left: 4px; }
+    .lichess-btn {
+        display: inline-flex;
+        align-items: center;
+        background: #629924;
+        color: #fff;
+        padding: 8px 16px;
+        border-radius: 6px;
+        font-weight: 600;
+        font-size: 0.9rem;
+        margin-bottom: 16px;
+        text-decoration: none;
+    }
+    .lichess-btn:hover { background: #4e7a1d; text-decoration: none; }
+    .moment-lichess-link { font-size: 0.8rem; margin-left: 8px; }
+    .hero-move { color: #4a9eff; font-weight: bold; }
+    .opp-move { color: #ff6b6b; }
+    .move-legend {
+        display: flex;
+        gap: 16px;
+        margin-bottom: 16px;
+        font-size: 0.85rem;
+        color: var(--muted-color);
+    }
+    .move-legend span { font-weight: bold; }
 
     /* Index page styles */
     .report-grid {
@@ -449,7 +495,8 @@ def generate_eval_chart_svg(move_evals: List[Dict[str, Any]],
 
 def generate_html_report(moments: List[CrucialMoment], metadata: Dict[str, str],
                          output_dir: str = "docs/analysis", summary: Optional[str] = None,
-                         move_evals: Optional[List[Dict[str, Any]]] = None):
+                         move_evals: Optional[List[Dict[str, Any]]] = None,
+                         lichess_url: Optional[str] = None):
     """
     Generates a self-contained HTML report with inline SVGs.
 
@@ -458,6 +505,8 @@ def generate_html_report(moments: List[CrucialMoment], metadata: Dict[str, str],
         metadata: Game metadata (White, Black, Date, etc.).
         output_dir: Directory to save the HTML report.
         summary: Optional LLM-generated game summary.
+        move_evals: Per-half-move eval list for chart/PGN annotation.
+        lichess_url: Optional Lichess game URL for deep links.
     """
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
@@ -483,6 +532,19 @@ def generate_html_report(moments: List[CrucialMoment], metadata: Dict[str, str],
     site_esc = html.escape(metadata.get('Site', ''))
 
     parts = []
+    lichess_link_html = ""
+    if lichess_url:
+        lichess_link_html = (
+            f'    <a href="{html.escape(lichess_url)}" target="_blank" class="lichess-btn">'
+            f'<svg viewBox="0 0 50 50" width="18" height="18" style="vertical-align:middle;margin-right:6px;fill:currentColor">'
+            f'<path d="M25 1C11.7 1 1 11.7 1 25s10.7 24 24 24 24-10.7 24-24S38.3 1 25 1zm0 4'
+            f'c5 0 9.6 1.8 13.2 4.9L25 23.1 11.8 9.9C15.4 6.8 20 5 25 5zm-15 8.7L23.2 27'
+            f' 10 40.3C6.8 36.6 5 32 5 27c0-5 1.8-9.6 5-13.3zM25 45c-5 0-9.6-1.8-13.2-5'
+            f'L25 26.9l13.2 13.2C34.6 43.2 30 45 25 45zm15-8.7L26.8 23 40 9.7c3.1 3.7 5 8.3'
+            f' 5 13.3 0 5-1.8 9.6-5 13.3z"/></svg>'
+            f'Analyze on Lichess</a>\n'
+        )
+
     parts.append(f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -497,7 +559,7 @@ def generate_html_report(moments: List[CrucialMoment], metadata: Dict[str, str],
     <a href="index.html" class="back-link">&larr; Back to Index</a>
     <h1>Analysis: {white_esc} vs {black_esc}</h1>
     <div class="meta"><strong>Date:</strong> {date_esc} | <strong>Event:</strong> {event_esc} | <strong>Site:</strong> {site_esc}</div>
-""")
+{lichess_link_html}""")
 
     # Eval chart (above moments)
     if move_evals:
@@ -511,6 +573,12 @@ def generate_html_report(moments: List[CrucialMoment], metadata: Dict[str, str],
     if not moments:
         parts.append('    <p class="empty-msg">No crucial moments (blunders/missed wins) detected for the hero in this game.</p>\n')
     else:
+        # Move legend
+        parts.append('    <div class="move-legend">'
+                     '<span class="hero-move">Your moves</span> '
+                     '<span class="opp-move">Opponent moves</span>'
+                     '</div>\n')
+
         blunder_count = sum(1 for m in moments if m.moment_type == "blunder")
         missed_count = sum(1 for m in moments if m.moment_type in ("missed_chance", "missed_mate"))
         summary_text = f'Found <strong>{len(moments)}</strong> crucial moment{"s" if len(moments) != 1 else ""}'
@@ -528,9 +596,16 @@ def generate_html_report(moments: List[CrucialMoment], metadata: Dict[str, str],
             if is_missed:
                 tactic_label = f"Missed {tactic_label}"
 
+            # Per-moment deep link to Lichess position
+            moment_link = ""
+            if lichess_url and moment.half_move_number is not None:
+                deep_url = f"{lichess_url}#{moment.half_move_number}"
+                moment_link = f' <a href="{html.escape(deep_url)}" target="_blank" class="moment-lichess-link" title="View on Lichess">&#x2197;</a>'
+
             parts.append(f'    <div class="moment-card">\n')
             parts.append(f'        <h2>Moment {i} <span class="moment-type-label">— {type_label}</span>'
-                         f' <span class="severity-pill" style="background:{severity_color}">{severity_label}</span></h2>\n')
+                         f' <span class="severity-pill" style="background:{severity_color}">{severity_label}</span>'
+                         f'{moment_link}</h2>\n')
             parts.append(f'        <span class="tactic-badge" style="background:{tactic_color}">{html.escape(tactic_label)}</span>\n')
 
             if moment.svg_content:
@@ -550,13 +625,15 @@ def generate_html_report(moments: List[CrucialMoment], metadata: Dict[str, str],
             parts.append('        </div>\n')
 
             if is_missed and moment.best_line:
-                parts.append(f'        <div class="best-line">You could have played: {html.escape(moment.best_line)}</div>\n')
+                formatted_best = format_refutation_line(moment.best_line, hero_is_next_to_move=True)
+                parts.append(f'        <div class="best-line">You could have played: {formatted_best}</div>\n')
 
             if moment.tactical_alert:
                 parts.append(f'        <div class="tactical-alert">{html.escape(moment.tactical_alert)}</div>\n')
 
             if moment.refutation_line and not is_missed:
-                parts.append(f'        <div class="variation" style="margin-bottom:12px">Refutation: {html.escape(moment.refutation_line)}</div>\n')
+                formatted_ref = format_refutation_line(moment.refutation_line, hero_is_next_to_move=False)
+                parts.append(f'        <div class="variation" style="margin-bottom:12px">Refutation: {formatted_ref}</div>\n')
 
             if moment.explanation:
                 parts.append('        <div class="explanation">\n')

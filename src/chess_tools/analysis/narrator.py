@@ -14,7 +14,7 @@ class AnalysisNarrator(ABC):
         pass
 
     @abstractmethod
-    def summarize_game(self, explanations: List[str]) -> str:
+    def summarize_game(self, explanations: List[str], history_context: str = "") -> str:
         """Generates a summary of the game based on explanations."""
         pass
 
@@ -115,12 +115,21 @@ class GoogleGeminiNarrator(AnalysisNarrator):
             logger.error(f"LLM Generation failed: {e}")
             return "Analysis unavailable due to LLM error."
 
-    def summarize_game(self, explanations: List[str]) -> str:
+    def summarize_game(self, explanations: List[str], history_context: str = "") -> str:
         if not explanations:
             return "No mistakes analyzed, so no summary available."
-            
+
         combined_text = "\n".join([f"- {exp}" for exp in explanations])
-        
+
+        history_section = ""
+        if history_context:
+            history_section = (
+                f"\n\n{history_context}\n\n"
+                f"Use the cross-game context to identify recurring patterns. "
+                f"If the player keeps making the same type of mistake, call it out explicitly. "
+                f"Note any progress or improvements compared to earlier games."
+            )
+
         prompt = (
             f"You are a Chess Coach. Here is the analysis of the user's mistakes in this game:\n"
             f"{combined_text}\n\n"
@@ -128,6 +137,7 @@ class GoogleGeminiNarrator(AnalysisNarrator):
             f"1. Identify the recurring theme of their errors (e.g., 'Passive Piece Play', 'Weakening Pawn Moves').\n"
             f"2. Provide 3 bullet points of actionable advice for their next game.\n"
             f"3. Keep it concise and encouraging."
+            f"{history_section}"
         )
         try:
             response = self.client.models.generate_content(
@@ -153,5 +163,5 @@ class MockNarrator(AnalysisNarrator):
             f"({moment.tactic_type}).{refutation} Best was {moment.best_move_san}."
         )
 
-    def summarize_game(self, explanations: List[str]) -> str:
+    def summarize_game(self, explanations: List[str], history_context: str = "") -> str:
         return "## 3 Key Takeaways\n\n- Mock Summary Point 1\n- Mock Summary Point 2\n- Mock Summary Point 3"

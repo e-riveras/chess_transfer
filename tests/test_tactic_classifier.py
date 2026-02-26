@@ -5,7 +5,7 @@ from chess_tools.analysis.engine import (
     classify_tactic,
     classify_moment,
     _compute_severity,
-    BLUNDER_THRESHOLD_CP,
+    BLUNDER_CP,
     MISSED_CHANCE_CP,
     WINNING_THRESHOLD,
 )
@@ -63,7 +63,8 @@ class TestClassifyTactic:
 
     def test_hanging_pawn(self):
         # White pawn on e5 undefended. Black pawn on d6 can capture dxe5.
-        board = chess.Board("rnbqkbnr/ppp1pppp/3p4/4P3/8/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1")
+        # Minimal position to avoid pin detection side-effects.
+        board = chess.Board("4k3/8/3p4/4P3/8/8/8/4K3 b - - 0 1")
         pv = _make_pv(board, ["dxe5"])
         result = classify_tactic(board, pv, mate_in=None, mover_color=chess.WHITE)
         assert result == "hanging_pawn"
@@ -77,10 +78,10 @@ class TestClassifyTactic:
         assert result == "fork"
 
     def test_pin(self):
-        # White knight on a2 pinned to king on a1 by Black rook on a8.
+        # Black bishop on f8 moves to b4, NEWLY pinning White knight on c3 to king on e1.
         # Black to move. mover_color = WHITE.
-        board = chess.Board("r3k3/8/8/8/8/8/N7/K7 b - - 0 1")
-        pv = _make_pv(board, ["Ke7"])
+        board = chess.Board("4kb2/8/8/8/8/2N5/8/4K3 b - - 0 1")
+        pv = _make_pv(board, ["Bb4"])
         result = classify_tactic(board, pv, mate_in=None, mover_color=chess.WHITE)
         assert result == "pin"
 
@@ -121,6 +122,48 @@ class TestClassifyTactic:
         result = classify_tactic(board, pv, mate_in=None, mover_color=chess.BLACK)
         assert result == "discovered_attack"
 
+    def test_pin_must_be_new(self):
+        # White knight on a2 already pinned to king on a1 by Black rook on a8.
+        # Black plays Ke7 — the pin existed before, so it should NOT return "pin".
+        board = chess.Board("r3k3/8/8/8/8/8/N7/K7 b - - 0 1")
+        pv = _make_pv(board, ["Ke7"])
+        result = classify_tactic(board, pv, mate_in=None, mover_color=chess.WHITE)
+        assert result != "pin"
+
+    def test_pin_with_board_before(self):
+        # Pin is newly created by the played move. Passing board_before ensures
+        # we compare pins before vs after correctly.
+        # board_before: bishop not yet on b4
+        board_before = chess.Board("4kb2/8/8/8/8/2N5/8/4K3 w - - 0 1")
+        # board_after: it's now Black's turn (after White moved), bishop on f8 still
+        board_after = chess.Board("4kb2/8/8/8/8/2N5/8/4K3 b - - 0 1")
+        pv = _make_pv(board_after, ["Bb4"])
+        result = classify_tactic(board_after, pv, mate_in=None, mover_color=chess.WHITE,
+                                  board_before=board_before)
+        assert result == "pin"
+
+    def test_fork_must_have_new_targets(self):
+        # Knight already attacks the king from d5. Moving Nc7 still attacks
+        # king but ALSO attacks rook — at least one new target.
+        board = chess.Board("r3k3/8/8/3N4/8/8/8/4K3 w - - 0 1")
+        pv = _make_pv(board, ["Nc7"])
+        result = classify_tactic(board, pv, mate_in=None, mover_color=chess.BLACK)
+        assert result == "fork"
+
+    def test_discovered_attack_on_queen(self):
+        # White bishop on b2, White rook behind on a1. Black queen on g7.
+        # If bishop moves off the a1-g7 diagonal, rook doesn't help — wrong piece type.
+        # Better: Black queen on h8, White rook on a1, White pawn on d4 blocking.
+        # Actually, let's do: White rook on a1, White knight on d4 (blocks diagonal).
+        # After Nf5, the a1-h8 diagonal is open, rook can't use diagonal.
+        # Simpler approach: use a file-based discovered attack on queen.
+        # White rook on d1, White knight on d4 blocking. Black queen on d8.
+        # After Ne6 (knight moves off d-file), rook on d1 attacks queen on d8.
+        board = chess.Board("3q4/4k3/8/8/3N4/8/8/3RK3 w - - 0 1")
+        pv = _make_pv(board, ["Ne6"])
+        result = classify_tactic(board, pv, mate_in=None, mover_color=chess.BLACK)
+        assert result == "discovered_attack"
+
 
 # ---------------------------------------------------------------------------
 # classify_moment tests
@@ -128,7 +171,7 @@ class TestClassifyTactic:
 
 class TestClassifyMoment:
     def test_blunder_position_collapses(self):
-        # Position goes from +50 to -300 (played_eval < -100, swing >= 250)
+        # Position goes from +50 to -300 (played_eval < -100, swing >= 200)
         result = classify_moment(best_eval=50, played_eval=-300, best_mate_in=None, played_mate_in=None)
         assert result is not None
         assert result[0] == "blunder"

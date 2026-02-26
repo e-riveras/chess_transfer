@@ -11,6 +11,7 @@ from chess_tools.lib.data.history import load_history, save_history
 from chess_tools.analysis.engine import ChessAnalyzer
 from chess_tools.analysis.narrator import GoogleGeminiNarrator, MockNarrator
 from chess_tools.analysis.report import generate_markdown_report, generate_html_report, regenerate_index_page
+from chess_tools.analysis.history import load_analysis_history, update_analysis_history, save_analysis_history, format_history_for_prompt
 
 logger = logging.getLogger("chess_transfer")
 
@@ -49,6 +50,7 @@ def run_sync_pipeline():
     actions_count = 0
     last_analyzable_pgn = None
     last_analyzable_id = None
+    last_analyzable_url = None
     
     # Track the absolute latest game found in the archives
     latest_candidate_game = None
@@ -85,8 +87,8 @@ def run_sync_pipeline():
             # --- STEP 1: IMPORT ---
             if game_id not in imported_ids:
                 logger.info(f"Found new game {game_id} ended at {datetime.fromtimestamp(end_time)}. Attempting import...")
-                import_status = import_game_to_lichess(client, pgn)
-                
+                import_status, lichess_url = import_game_to_lichess(client, pgn)
+
                 if import_status == "IMPORTED" or import_status == "DUPLICATE":
                     imported_ids.add(game_id)
                     actions_count += 1
@@ -129,6 +131,7 @@ def run_sync_pipeline():
                             if last_analyzable_pgn is None:
                                 last_analyzable_pgn = pgn
                                 last_analyzable_id = game_id
+                                last_analyzable_url = lichess_url
                             time.sleep(STUDY_ADD_DELAY_SECONDS)
                 else:
                     logger.debug(f"Game {game_id} already in studied_ids.")
@@ -191,7 +194,12 @@ def run_sync_pipeline():
                         moment.explanation = explanation
                         explanations.append(explanation)
 
-                    summary = narrator.summarize_game(explanations)
+                    # Load cross-game history for context
+                    history_path = str(get_repo_root() / "docs" / "analysis" / "history.json")
+                    analysis_history = load_analysis_history(history_path)
+                    history_context = format_history_for_prompt(analysis_history)
+
+                    summary = narrator.summarize_game(explanations, history_context=history_context)
 
                     output_dir = get_output_dir("analysis")
 
@@ -199,8 +207,12 @@ def run_sync_pipeline():
 
                     html_dir = str(get_repo_root() / "docs" / "analysis")
                     generate_html_report(moments, metadata, output_dir=html_dir, summary=summary,
-                                         move_evals=move_evals)
+                                         move_evals=move_evals, lichess_url=last_analyzable_url)
                     regenerate_index_page(html_dir)
+
+                    # Update cross-game analysis history
+                    update_analysis_history(analysis_history, moments, metadata)
+                    save_analysis_history(analysis_history, history_path)
 
                     logger.info("Analysis report generated.")
                     

@@ -44,3 +44,5 @@ class CrucialMoment:
     moment_type: str = "blunder"        # "blunder" | "missed_chance" | "missed_mate"
     severity: str = "minor"             # "critical" | "major" | "minor"
     best_line: str = ""                 # SAN moves of best PV (for missed chances)
+    lichess_url: Optional[str] = None
+    half_move_number: Optional[int] = None
