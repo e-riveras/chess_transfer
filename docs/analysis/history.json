@@ -53,6 +53,15 @@
       "blunder_count": 0,
       "missed_count": 0,
       "tactics": []
+    },
+    {
+      "date": "2026.02.26",
+      "white": "erivera90",
+      "black": "lonesome13",
+      "result": "1-0",
+      "blunder_count": 0,
+      "missed_count": 0,
+      "tactics": []
     }
   ],
   "tactic_counts": {},
