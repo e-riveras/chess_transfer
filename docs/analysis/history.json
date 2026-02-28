@@ -64,15 +64,6 @@
       "tactics": []
     },
     {
-      "date": "2026.02.26",
-      "white": "erivera90",
-      "black": "lonesome13",
-      "result": "1-0",
-      "blunder_count": 0,
-      "missed_count": 0,
-      "tactics": []
-    },
-    {
       "date": "2026.02.28",
       "white": "erivera90",
       "black": "markusfb66",
@@ -214,6 +205,20 @@
       "tactics": [
         "hanging_pawn",
         "hanging_pawn",
+        "hanging_pawn"
+      ]
+    },
+    {
+      "date": "2026.02.28",
+      "white": "erivera90",
+      "black": "markusfb66",
+      "result": "1-0",
+      "blunder_count": 0,
+      "missed_count": 4,
+      "tactics": [
+        "hanging_pawn",
+        "hanging_pawn",
+        "positional",
         "hanging_pawn"
       ]
     },
@@ -233,9 +238,9 @@
     }
   ],
   "tactic_counts": {
-    "hanging_pawn": 36,
-    "positional": 3
+    "hanging_pawn": 39,
+    "positional": 4
   },
   "total_blunders": 0,
-  "total_missed": 39
+  "total_missed": 43
 }
