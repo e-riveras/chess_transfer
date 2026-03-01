@@ -6,12 +6,11 @@
       "black": "markusfb66",
       "result": "1-0",
       "blunder_count": 0,
-      "missed_count": 4,
+      "missed_count": 3,
       "tactics": [
         "hanging_pawn",
         "hanging_pawn",
-        "hanging_pawn",
-        "forced_mate"
+        "hanging_pawn"
       ]
     },
     {
@@ -263,10 +262,10 @@
     }
   ],
   "tactic_counts": {
-    "hanging_pawn": 108,
+    "hanging_pawn": 111,
     "positional": 4,
     "forced_mate": 1
   },
   "total_blunders": 0,
-  "total_missed": 113
+  "total_missed": 116
 }
