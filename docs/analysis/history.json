@@ -262,10 +262,10 @@
     }
   ],
   "tactic_counts": {
-    "hanging_pawn": 120,
+    "hanging_pawn": 123,
     "positional": 4,
     "forced_mate": 1
   },
   "total_blunders": 0,
-  "total_missed": 125
+  "total_missed": 128
 }
