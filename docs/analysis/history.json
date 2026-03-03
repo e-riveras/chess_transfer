@@ -62,7 +62,7 @@
       "tactics": [
         "hanging_pawn",
         "hanging_pawn",
-        "hanging_pawn"
+        "positional"
       ]
     },
     {
@@ -75,7 +75,7 @@
       "tactics": [
         "hanging_pawn",
         "hanging_pawn",
-        "positional"
+        "hanging_pawn"
       ]
     },
     {
@@ -262,10 +262,10 @@
     }
   ],
   "tactic_counts": {
-    "hanging_pawn": 184,
+    "hanging_pawn": 187,
     "positional": 6,
     "forced_mate": 1
   },
   "total_blunders": 0,
-  "total_missed": 191
+  "total_missed": 194
 }
