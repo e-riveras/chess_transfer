@@ -1,16 +1,23 @@
 import json
 import os
 import logging
+from pathlib import Path
 from typing import Dict, List, Optional
 
 logger = logging.getLogger("chess_transfer")
 
+def _get_repo_root() -> Path:
+    """Walks up from this file until the .git directory is found."""
+    current = Path(__file__).resolve().parent
+    while current != current.parent:
+        if (current / '.git').exists():
+            return current
+        current = current.parent
+    return Path.cwd()
+
 def get_history_file_path() -> str:
-    """Returns the absolute path to history.json."""
-    # Assuming this runs from project root or src/data
-    # Let's anchor it to project root based on file location
-    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    return os.path.join(base_dir, 'data', 'history.json')
+    """Returns the absolute path to history.json at the repo root."""
+    return str(_get_repo_root() / 'data' / 'history.json')
 
 def load_history() -> Dict:
     """Loads the history of imported games from a JSON file."""

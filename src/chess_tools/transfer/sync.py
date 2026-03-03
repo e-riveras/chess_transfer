@@ -5,7 +5,7 @@ import time
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 from chess_tools.lib.utils import check_env_var, get_output_dir, get_repo_root
-from chess_tools.lib.api.lichess import get_lichess_client, StudyManager, import_game_to_lichess
+from chess_tools.lib.api.lichess import get_lichess_client, get_lichess_username, StudyManager, import_game_to_lichess
 from chess_tools.lib.api.chesscom import get_chesscom_archives, get_games_from_archive
 from chess_tools.lib.data.history import load_history, save_history
 from chess_tools.analysis.engine import ChessAnalyzer
@@ -33,6 +33,10 @@ def run_sync_pipeline():
     logger.info("Starting Chess.com to Lichess sync...")
     
     client = get_lichess_client(lichess_token)
+    lichess_username = get_lichess_username(client)
+    if not lichess_username:
+        logger.error("Could not determine Lichess username from token. Aborting.")
+        return
     study_manager = StudyManager(lichess_token)
 
     # 1. Load local history
@@ -107,31 +111,33 @@ def run_sync_pipeline():
             if is_rapid and has_moves:
                 if game_id not in studied_ids:
                     logger.info(f"Game {game_id} qualifies for study. Adding...")
+
+                    # Capture the most recent qualifying game for analysis regardless
+                    # of whether the study exists yet.
+                    if last_analyzable_pgn is None:
+                        last_analyzable_pgn = pgn
+                        last_analyzable_id = game_id
+                        last_analyzable_url = lichess_url
+
                     game_dt = datetime.fromtimestamp(end_time, tz=timezone.utc)
                     month_name = game_dt.strftime("%B %Y")
                     study_name = f"Rapid Games - {month_name}"
-                    
+
                     study_id = history["monthly_studies"].get(study_name)
                     if not study_id:
-                        study_id = study_manager.find_study_by_name(chesscom_username, study_name)
+                        study_id = study_manager.find_study_by_name(lichess_username, study_name)
                         if study_id:
                             logger.info(f"Found existing study: {study_name} ({study_id})")
                             history["monthly_studies"][study_name] = study_id
                             save_history(history)
                         else:
-                            logger.warning(f"Study '{study_name}' not found. Please create it manually on Lichess to enable auto-import.")
-                    
+                            logger.warning(f"Study '{study_name}' not found. Skipping study export (analysis will still run).")
+
                     if study_id:
                         chapter_name = f"{game['white']['username']} vs {game['black']['username']}"
                         if study_manager.add_game_to_study(study_id, pgn, chapter_name):
                             studied_ids.add(game_id)
                             actions_count += 1
-                            # Only capture the first new game (newest, since we process
-                            # newest-first) so analysis targets the most recent game.
-                            if last_analyzable_pgn is None:
-                                last_analyzable_pgn = pgn
-                                last_analyzable_id = game_id
-                                last_analyzable_url = lichess_url
                             time.sleep(STUDY_ADD_DELAY_SECONDS)
                 else:
                     logger.debug(f"Game {game_id} already in studied_ids.")
