@@ -285,6 +285,35 @@ _HTML_STYLE = """
     .report-card .card-meta { color: var(--muted-color); font-size: 0.9rem; margin-bottom: 10px; }
     .report-card .card-moments { color: var(--accent-color); font-weight: bold; }
     .no-reports { color: var(--muted-color); text-align: center; margin-top: 40px; font-style: italic; }
+
+    /* Run-analysis button */
+    .run-bar {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 24px;
+    }
+    .run-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: var(--accent-color);
+        color: #fff;
+        border: none;
+        padding: 9px 18px;
+        border-radius: 6px;
+        font-size: 0.95rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.15s, opacity 0.15s;
+    }
+    .run-btn:hover:not(:disabled) { background: #2d7fd4; }
+    .run-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+    .run-status { font-size: 0.88rem; color: var(--muted-color); }
+    .run-status.ok { color: #51cf66; }
+    .run-status.err { color: #ff6b6b; }
+    .token-link { font-size: 0.8rem; color: var(--muted-color); cursor: pointer; }
+    .token-link:hover { color: var(--text-color); }
 """
 
 
@@ -722,6 +751,67 @@ def regenerate_index_page(html_output_dir: str):
 <div class="container">
     <h1>Analysis Reports</h1>
     <div class="meta">Game analysis with Stockfish engine and AI coach explanations.</div>
+    <div class="run-bar">
+        <button class="run-btn" id="runBtn" onclick="triggerAnalysis()">&#9654; Run Analysis</button>
+        <span class="run-status" id="runStatus"></span>
+        <span class="token-link" id="tokenLink" onclick="resetToken()" title="Update stored GitHub token" style="display:none">[change token]</span>
+    </div>
+    <script>
+    (function() {{
+        var tokenLink = document.getElementById('tokenLink');
+        if (localStorage.getItem('gh_actions_pat')) tokenLink.style.display = '';
+    }})();
+
+    function triggerAnalysis() {{
+        var pat = localStorage.getItem('gh_actions_pat');
+        if (!pat) {{
+            pat = prompt('Enter a GitHub fine-grained PAT with Actions: write scope for e-riveras/chess-tools:');
+            if (!pat) return;
+            localStorage.setItem('gh_actions_pat', pat.trim());
+            document.getElementById('tokenLink').style.display = '';
+        }}
+        var btn = document.getElementById('runBtn');
+        var status = document.getElementById('runStatus');
+        btn.disabled = true;
+        btn.textContent = '⏳ Triggering…';
+        status.className = 'run-status';
+        status.textContent = '';
+        fetch('https://api.github.com/repos/e-riveras/chess-tools/actions/workflows/sync.yml/dispatches', {{
+            method: 'POST',
+            headers: {{
+                'Authorization': 'Bearer ' + localStorage.getItem('gh_actions_pat'),
+                'Accept': 'application/vnd.github+json',
+                'Content-Type': 'application/json'
+            }},
+            body: JSON.stringify({{ ref: 'main' }})
+        }}).then(function(r) {{
+            btn.disabled = false;
+            btn.innerHTML = '&#9654; Run Analysis';
+            if (r.status === 204) {{
+                status.className = 'run-status ok';
+                status.textContent = '✓ Workflow triggered — check Actions tab for progress.';
+            }} else if (r.status === 401 || r.status === 403) {{
+                status.className = 'run-status err';
+                status.textContent = '✗ Auth failed. Token may be invalid or lack Actions: write scope.';
+            }} else {{
+                status.className = 'run-status err';
+                status.textContent = '✗ Error ' + r.status + '. Check token permissions.';
+            }}
+        }}).catch(function(e) {{
+            btn.disabled = false;
+            btn.innerHTML = '&#9654; Run Analysis';
+            status.className = 'run-status err';
+            status.textContent = '✗ Network error: ' + e.message;
+        }});
+    }}
+
+    function resetToken() {{
+        localStorage.removeItem('gh_actions_pat');
+        document.getElementById('tokenLink').style.display = 'none';
+        document.getElementById('runStatus').textContent = '';
+        alert('Token cleared. You will be prompted on next run.');
+    }}
+    </script>
 """)
 
     if not reports:
