@@ -149,19 +149,6 @@
       "black": "markusfb66",
       "result": "1-0",
       "blunder_count": 0,
-      "missed_count": 3,
-      "tactics": [
-        "hanging_pawn",
-        "hanging_pawn",
-        "hanging_pawn"
-      ]
-    },
-    {
-      "date": "2026.02.28",
-      "white": "erivera90",
-      "black": "markusfb66",
-      "result": "1-0",
-      "blunder_count": 0,
       "missed_count": 4,
       "tactics": [
         "hanging_pawn",
@@ -261,6 +248,15 @@
         "positional",
         "positional"
       ]
+    },
+    {
+      "date": "2026.03.04",
+      "white": "erivera90",
+      "black": "Faresallam1980",
+      "result": "1-0",
+      "blunder_count": 0,
+      "missed_count": 0,
+      "tactics": []
     }
   ],
   "tactic_counts": {
