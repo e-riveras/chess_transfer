@@ -78,7 +78,8 @@ def run_analysis_pipeline(pgn_file_path: str = "game.pgn"):
             analysis_history = load_analysis_history(history_path)
             history_context = format_history_for_prompt(analysis_history)
 
-            summary = narrator.summarize_game(explanations, history_context=history_context)
+            # Only generate pattern summary when prior game history exists
+            summary = narrator.summarize_game(explanations, history_context=history_context) if history_context else ""
 
             output_dir = get_output_dir("analysis")
 

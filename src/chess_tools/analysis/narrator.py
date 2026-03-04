@@ -116,28 +116,24 @@ class GoogleGeminiNarrator(AnalysisNarrator):
             return "Analysis unavailable due to LLM error."
 
     def summarize_game(self, explanations: List[str], history_context: str = "") -> str:
-        if not explanations:
-            return "No mistakes analyzed, so no summary available."
+        if not history_context:
+            return ""
 
-        combined_text = "\n".join([f"- {exp}" for exp in explanations])
-
-        history_section = ""
-        if history_context:
-            history_section = (
-                f"\n\n{history_context}\n\n"
-                f"Use the cross-game context to identify recurring patterns. "
-                f"If the player keeps making the same type of mistake, call it out explicitly. "
-                f"Note any progress or improvements compared to earlier games."
-            )
+        combined_text = "\n".join([f"- {exp}" for exp in explanations]) if explanations else "(no mistakes this game)"
 
         prompt = (
-            f"You are a Chess Coach. Here is the analysis of the user's mistakes in this game:\n"
-            f"{combined_text}\n\n"
-            f"Task: Summarize the user's performance into a section titled '## 3 Key Takeaways'.\n"
-            f"1. Identify the recurring theme of their errors (e.g., 'Passive Piece Play', 'Weakening Pawn Moves').\n"
-            f"2. Provide 3 bullet points of actionable advice for their next game.\n"
-            f"3. Keep it concise and encouraging."
-            f"{history_section}"
+            f"You are a Chess analyst reviewing a player's recurring mistake patterns.\n\n"
+            f"CROSS-GAME HISTORY:\n{history_context}\n\n"
+            f"THIS GAME'S MISTAKES:\n{combined_text}\n\n"
+            f"Task: Write a short section titled '## Recurring Patterns' that identifies which blunder "
+            f"types appear most frequently across the player's recent games. "
+            f"Reference specific tactic names (e.g. 'Hanging Piece', 'Fork', 'Pin'). "
+            f"Note whether this game continues or breaks the trend.\n\n"
+            f"Constraints:\n"
+            f"1. Do NOT give generic advice or bullet-pointed tips.\n"
+            f"2. Do NOT use the phrase 'Key Takeaways'.\n"
+            f"3. Focus purely on pattern recognition from the data — which errors recur and how often.\n"
+            f"4. Keep it to 3-5 sentences."
         )
         try:
             response = self.client.models.generate_content(
@@ -164,4 +160,6 @@ class MockNarrator(AnalysisNarrator):
         )
 
     def summarize_game(self, explanations: List[str], history_context: str = "") -> str:
-        return "## 3 Key Takeaways\n\n- Mock Summary Point 1\n- Mock Summary Point 2\n- Mock Summary Point 3"
+        if not history_context:
+            return ""
+        return "## Recurring Patterns\n\n[Mock] Hanging pieces account for the majority of blunders across recent games."
