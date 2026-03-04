@@ -205,6 +205,19 @@ def _ray_between(sq1: int, sq2: int) -> Optional[List[int]]:
     return squares
 
 
+def _slider_can_reach(piece_type: int, df: int, dr: int) -> bool:
+    """Check if a sliding piece type can attack along the direction (df, dr)."""
+    is_diagonal = (df != 0 and dr != 0 and abs(df) == abs(dr))
+    is_straight = (df == 0) != (dr == 0)  # exactly one is zero
+    if piece_type == chess.BISHOP:
+        return is_diagonal
+    if piece_type == chess.ROOK:
+        return is_straight
+    if piece_type == chess.QUEEN:
+        return is_diagonal or is_straight
+    return False
+
+
 def _find_absolute_pins(board: chess.Board, color: chess.Color) -> set:
     """Return set of squares of `color`'s pieces that are pinned to their king."""
     pinned = set()
@@ -229,13 +242,15 @@ def _find_relative_pins(board: chess.Board, pinner_color: chess.Color, victim_co
                     ray = _ray_between(slider_sq, front_sq)
                     if ray is None:
                         continue
-                    if any(board.piece_at(s) is not None for s in ray):
-                        continue
-                    # Scan behind the front piece
+                    # Verify slider can actually attack along this direction
                     f_s, r_s = chess.square_file(slider_sq), chess.square_rank(slider_sq)
                     f_f, r_f = chess.square_file(front_sq), chess.square_rank(front_sq)
                     df = f_f - f_s
                     dr = r_f - r_s
+                    if not _slider_can_reach(slider_type, df, dr):
+                        continue
+                    if any(board.piece_at(s) is not None for s in ray):
+                        continue
                     step_f = (1 if df > 0 else -1) if df != 0 else 0
                     step_r = (1 if dr > 0 else -1) if dr != 0 else 0
                     f, r = f_f + step_f, r_f + step_r
@@ -259,7 +274,6 @@ def classify_tactic(
     refutation_pv: list,
     mate_in,
     mover_color: chess.Color,
-    board_before: chess.Board = None
 ) -> str:
     """
     Deterministically label the tactic type from the refutation line.
@@ -292,23 +306,31 @@ def classify_tactic(
     board_copy = board_after.copy()
     board_copy.push(first_move)
 
+    # Determine the effective piece type (accounts for pawn promotions)
+    moved_piece = board_after.piece_at(first_move.from_square)
+    effective_piece_type = first_move.promotion if first_move.promotion else (
+        moved_piece.piece_type if moved_piece else None
+    )
+
     # 2. Skewer — after the refutation move, check if a sliding piece attacks through
     #    a higher-value piece to a lower-value piece along a ray
-    moved_piece = board_after.piece_at(first_move.from_square)
-    if moved_piece and moved_piece.piece_type in (chess.BISHOP, chess.ROOK, chess.QUEEN):
+    if effective_piece_type in (chess.BISHOP, chess.ROOK, chess.QUEEN):
         to_sq = first_move.to_square
-        for pt in [chess.QUEEN, chess.ROOK, chess.BISHOP, chess.KNIGHT]:
+        for pt in [chess.KING, chess.QUEEN, chess.ROOK, chess.BISHOP, chess.KNIGHT]:
             for target_sq in board_copy.pieces(pt, mover_color):
                 ray = _ray_between(to_sq, target_sq)
                 if ray is None:
                     continue
-                blocked = any(board_copy.piece_at(s) is not None for s in ray)
-                if blocked:
-                    continue
+                # Verify slider can attack along this direction
                 f_to, r_to = chess.square_file(to_sq), chess.square_rank(to_sq)
                 f_tgt, r_tgt = chess.square_file(target_sq), chess.square_rank(target_sq)
                 df = f_tgt - f_to
                 dr = r_tgt - r_to
+                if not _slider_can_reach(effective_piece_type, df, dr):
+                    continue
+                blocked = any(board_copy.piece_at(s) is not None for s in ray)
+                if blocked:
+                    continue
                 step_f = (1 if df > 0 else -1) if df != 0 else 0
                 step_r = (1 if dr > 0 else -1) if dr != 0 else 0
                 f, r = f_tgt + step_f, r_tgt + step_r
@@ -319,22 +341,23 @@ def classify_tactic(
                         if behind_piece.color == mover_color:
                             front_val = PIECE_VALUES.get(pt, 0)
                             back_val = PIECE_VALUES.get(behind_piece.piece_type, 0)
-                            if front_val >= back_val and PIECE_VALUES.get(moved_piece.piece_type, 0) >= 5:
+                            # Skewer: front piece is more valuable than back piece
+                            if front_val > back_val:
                                 return "skewer"
                         break
                     f += step_f
                     r += step_r
 
-    # 3. Pin — must be NEWLY created by the refutation
-    # Absolute pins: compare before vs after refutation
-    abs_pins_before = _find_absolute_pins(board_after, mover_color) if board_before is None else _find_absolute_pins(board_before, mover_color)
+    # 3. Pin — must be NEWLY created by the refutation move.
+    # Baseline is always board_after (post-blunder, pre-refutation) so we only
+    # detect pins that the refutation itself introduces, not pre-existing ones.
+    abs_pins_before = _find_absolute_pins(board_after, mover_color)
     abs_pins_after = _find_absolute_pins(board_copy, mover_color)
     if abs_pins_after - abs_pins_before:
         return "pin"
 
     # Relative pins: compare before vs after refutation
-    ref_board_before = board_after if board_before is None else board_before
-    rel_pins_before = _find_relative_pins(ref_board_before, opp_color, mover_color)
+    rel_pins_before = _find_relative_pins(board_after, opp_color, mover_color)
     rel_pins_after = _find_relative_pins(board_copy, opp_color, mover_color)
     if rel_pins_after - rel_pins_before:
         return "pin"
@@ -367,17 +390,23 @@ def classify_tactic(
         if captured is None and first_move.promotion:
             return "hanging_piece"
         if captured and captured.color == mover_color:
+            is_defended = board_after.is_attacked_by(mover_color, first_move.to_square)
             if captured.piece_type == chess.PAWN:
-                return "hanging_pawn"
-            # 6. Losing exchange — capture of a defended piece
-            if board_after.is_attacked_by(mover_color, first_move.to_square):
+                if not is_defended:
+                    return "hanging_pawn"
+                # defended pawn capture — fall through to other checks
+            elif not is_defended:
+                return "hanging_piece"
+            else:
+                # 6. Losing exchange — opponent captures a defended piece with a cheaper
+                #    piece, so the hero loses material even after recapturing.
                 attacker_piece = board_after.piece_at(first_move.from_square)
                 if attacker_piece:
                     attacker_val = PIECE_VALUES.get(attacker_piece.piece_type, 0)
                     captured_val = PIECE_VALUES.get(captured.piece_type, 0)
-                    if attacker_val > captured_val:
+                    if attacker_val < captured_val:
                         return "losing_exchange"
-            return "hanging_piece"
+                # defended but not losing exchange — fall through to other checks
 
     # 7. Fork — restricted to attacks by the moved piece only, must have NEW targets
     if moved_piece:
@@ -623,7 +652,7 @@ class ChessAnalyzer:
 
             # Tactic classification
             if is_blunder:
-                tactic_type = classify_tactic(board_after.copy(), refutation_pv, mate_in, mover_color, board_before=board_before.copy())
+                tactic_type = classify_tactic(board_after.copy(), refutation_pv, mate_in, mover_color)
             else:
                 opp_color = not mover_color
                 best_pv = info_before.get("pv", [])

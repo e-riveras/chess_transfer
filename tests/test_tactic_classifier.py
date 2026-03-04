@@ -86,11 +86,11 @@ class TestClassifyTactic:
         assert result == "pin"
 
     def test_losing_exchange(self):
-        # White knight on e4 defended by White pawn on d3.
-        # Black queen on h4 captures Qxe4. Queen(9) captures defended Knight(3).
-        # attacker_val(9) > captured_val(3) => losing_exchange.
-        board = chess.Board("4k3/8/8/8/4N2q/3P4/8/4K3 b - - 0 1")
-        pv = _make_pv(board, ["Qxe4"])
+        # White rook on e4 defended by White pawn on d3.
+        # Black knight on f6 captures Nxe4. Knight(3) captures defended Rook(5).
+        # attacker_val(3) < captured_val(5) => losing_exchange for White.
+        board = chess.Board("4k3/8/5n2/8/4R3/3P4/8/4K3 b - - 0 1")
+        pv = _make_pv(board, ["Nxe4"])
         result = classify_tactic(board, pv, mate_in=None, mover_color=chess.WHITE)
         assert result == "losing_exchange"
 
@@ -130,16 +130,12 @@ class TestClassifyTactic:
         result = classify_tactic(board, pv, mate_in=None, mover_color=chess.WHITE)
         assert result != "pin"
 
-    def test_pin_with_board_before(self):
-        # Pin is newly created by the played move. Passing board_before ensures
-        # we compare pins before vs after correctly.
-        # board_before: bishop not yet on b4
-        board_before = chess.Board("4kb2/8/8/8/8/2N5/8/4K3 w - - 0 1")
-        # board_after: it's now Black's turn (after White moved), bishop on f8 still
+    def test_pin_with_different_board_state(self):
+        # Pin is newly created by the refutation move. The baseline comparison
+        # (board_after vs board_copy) correctly detects pins the refutation creates.
         board_after = chess.Board("4kb2/8/8/8/8/2N5/8/4K3 b - - 0 1")
         pv = _make_pv(board_after, ["Bb4"])
-        result = classify_tactic(board_after, pv, mate_in=None, mover_color=chess.WHITE,
-                                  board_before=board_before)
+        result = classify_tactic(board_after, pv, mate_in=None, mover_color=chess.WHITE)
         assert result == "pin"
 
     def test_fork_must_have_new_targets(self):
@@ -151,18 +147,39 @@ class TestClassifyTactic:
         assert result == "fork"
 
     def test_discovered_attack_on_queen(self):
-        # White bishop on b2, White rook behind on a1. Black queen on g7.
-        # If bishop moves off the a1-g7 diagonal, rook doesn't help — wrong piece type.
-        # Better: Black queen on h8, White rook on a1, White pawn on d4 blocking.
-        # Actually, let's do: White rook on a1, White knight on d4 (blocks diagonal).
-        # After Nf5, the a1-h8 diagonal is open, rook can't use diagonal.
-        # Simpler approach: use a file-based discovered attack on queen.
         # White rook on d1, White knight on d4 blocking. Black queen on d8.
         # After Ne6 (knight moves off d-file), rook on d1 attacks queen on d8.
         board = chess.Board("3q4/4k3/8/8/3N4/8/8/3RK3 w - - 0 1")
         pv = _make_pv(board, ["Ne6"])
         result = classify_tactic(board, pv, mate_in=None, mover_color=chess.BLACK)
         assert result == "discovered_attack"
+
+    def test_skewer_through_king(self):
+        # Classic file skewer: Black rook on a8 moves to a6, creating a skewer
+        # through White king on a3 to White queen on a1.
+        # mover_color = WHITE (the side being skewered).
+        board = chess.Board("r3k3/8/8/8/8/K7/8/Q7 b - - 0 1")
+        pv = _make_pv(board, ["Ra6"])
+        result = classify_tactic(board, pv, mate_in=None, mover_color=chess.WHITE)
+        assert result == "skewer"
+
+    def test_skewer_bishop_not_on_rank(self):
+        # Regression: bishop should NOT be detected as skewering along a file.
+        # White bishop on a1 moves to b2. Black knight on b5 and Black rook on b8
+        # are on the b-file — but a bishop can't attack along a file.
+        board = chess.Board("1r6/8/8/1n6/8/8/8/B3K2k w - - 0 1")
+        pv = _make_pv(board, ["Bb2"])
+        result = classify_tactic(board, pv, mate_in=None, mover_color=chess.BLACK)
+        assert result != "skewer"
+
+    def test_defended_piece_not_hanging(self):
+        # White rook on e4 defended by White rook on e1. Black queen captures Qxe4.
+        # Queen(9) takes defended Rook(5). Attacker is MORE valuable than captured.
+        # This should NOT be "hanging_piece" — should fall through to other checks.
+        board = chess.Board("4k3/8/8/8/4R2q/8/8/4RK2 b - - 0 1")
+        pv = _make_pv(board, ["Qxe4"])
+        result = classify_tactic(board, pv, mate_in=None, mover_color=chess.WHITE)
+        assert result != "hanging_piece"
 
 
 # ---------------------------------------------------------------------------
