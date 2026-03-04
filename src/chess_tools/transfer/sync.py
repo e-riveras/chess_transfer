@@ -1,11 +1,10 @@
 import os
 import logging
-import re
 import time
-from datetime import datetime, timezone
+from datetime import datetime
 from urllib.parse import urlparse
 from chess_tools.lib.utils import check_env_var, get_output_dir, get_repo_root
-from chess_tools.lib.api.lichess import get_lichess_client, get_lichess_username, StudyManager, import_game_to_lichess
+from chess_tools.lib.api.lichess import get_lichess_client, get_lichess_username, import_game_to_lichess
 from chess_tools.lib.api.chesscom import get_chesscom_archives, get_games_from_archive
 from chess_tools.lib.data.history import load_history, save_history
 from chess_tools.analysis.engine import ChessAnalyzer
@@ -18,7 +17,6 @@ logger = logging.getLogger("chess_transfer")
 MAX_IMPORTS_PER_RUN = 100
 IMPORT_DELAY_SECONDS = 6
 DUPLICATE_DELAY_SECONDS = 1
-STUDY_ADD_DELAY_SECONDS = 2
 
 
 def run_sync_pipeline():
@@ -37,25 +35,21 @@ def run_sync_pipeline():
     if not lichess_username:
         logger.error("Could not determine Lichess username from token. Aborting.")
         return
-    study_manager = StudyManager(lichess_token)
 
     # 1. Load local history
     history = load_history()
     imported_ids = set(history.get("imported_ids", []))
-    studied_ids = set(history.get("studied_ids", []))
     last_analyzed_id = history.get("last_analyzed_id")
-    
-    logger.info(f"Loaded {len(imported_ids)} imported games, {len(studied_ids)} studied games.")
+
+    logger.info(f"Loaded {len(imported_ids)} imported games.")
 
     # 2. Get Chess.com archives
     archives = get_chesscom_archives(chesscom_username)
     archives.sort(reverse=True) 
     
     actions_count = 0
-    last_analyzable_pgn = None
-    last_analyzable_id = None
-    last_analyzable_url = None
-    
+    lichess_url_map: dict = {}
+
     # Track the absolute latest game found in the archives
     latest_candidate_game = None
 
@@ -97,57 +91,17 @@ def run_sync_pipeline():
                     imported_ids.add(game_id)
                     actions_count += 1
                     if import_status == "IMPORTED":
+                        if lichess_url:
+                            lichess_url_map[game_id] = lichess_url
                         time.sleep(IMPORT_DELAY_SECONDS)
                     else:
                         time.sleep(DUPLICATE_DELAY_SECONDS)
                 else:
                     time.sleep(DUPLICATE_DELAY_SECONDS)
-                    continue 
-            
-            # --- STEP 2: STUDY ---
-            is_rapid = (time_class == 'rapid')
-            has_moves = bool(re.search(r'\b20\.', pgn))
-            
-            if is_rapid and has_moves:
-                if game_id not in studied_ids:
-                    logger.info(f"Game {game_id} qualifies for study. Adding...")
+                    continue
 
-                    # Capture the most recent qualifying game for analysis regardless
-                    # of whether the study exists yet.
-                    if last_analyzable_pgn is None:
-                        last_analyzable_pgn = pgn
-                        last_analyzable_id = game_id
-                        last_analyzable_url = lichess_url
-
-                    game_dt = datetime.fromtimestamp(end_time, tz=timezone.utc)
-                    month_name = game_dt.strftime("%B %Y")
-                    study_name = f"Rapid Games - {month_name}"
-
-                    study_id = history["monthly_studies"].get(study_name)
-                    if not study_id:
-                        study_id = study_manager.find_study_by_name(lichess_username, study_name)
-                        if study_id:
-                            logger.info(f"Found existing study: {study_name} ({study_id})")
-                            history["monthly_studies"][study_name] = study_id
-                            save_history(history)
-                        else:
-                            logger.warning(f"Study '{study_name}' not found. Skipping study export (analysis will still run).")
-
-                    if study_id:
-                        chapter_name = f"{game['white']['username']} vs {game['black']['username']}"
-                        if study_manager.add_game_to_study(study_id, pgn, chapter_name):
-                            studied_ids.add(game_id)
-                            actions_count += 1
-                            time.sleep(STUDY_ADD_DELAY_SECONDS)
-                else:
-                    logger.debug(f"Game {game_id} already in studied_ids.")
-            else:
-                if is_rapid:
-                    logger.debug(f"Game {game_id} skipped: too short ({len(pgn)} chars).")
-            
             # Update history object in memory
             history["imported_ids"] = sorted(list(imported_ids))
-            history["studied_ids"] = sorted(list(studied_ids))
 
             if actions_count >= max_imports:
                 logger.info(f"Reached limit of {max_imports} actions for this run. Saving and stopping.")
@@ -160,17 +114,13 @@ def run_sync_pipeline():
     save_history(history)
     logger.info(f"Sync complete. {actions_count} actions performed.")
 
-    # --- STEP 3: ANALYSIS LOGIC ---
+    # --- STEP 2: ANALYSIS LOGIC ---
     pgn_to_analyze = None
     id_to_analyze = None
 
-    if last_analyzable_pgn:
-        logger.info("Analyzing the game just transferred to study...")
-        pgn_to_analyze = last_analyzable_pgn
-        id_to_analyze = last_analyzable_id
-    elif latest_candidate_game:
+    if latest_candidate_game:
         if latest_candidate_game['id'] != last_analyzed_id:
-            logger.info(f"No new transfer, but found recent game {latest_candidate_game['id']} not yet analyzed. Analyzing...")
+            logger.info(f"Found recent game {latest_candidate_game['id']} not yet analyzed. Analyzing...")
             pgn_to_analyze = latest_candidate_game['pgn']
             id_to_analyze = latest_candidate_game['id']
         else:
@@ -212,8 +162,9 @@ def run_sync_pipeline():
                     generate_markdown_report(moments, metadata, output_dir=output_dir, summary=summary)
 
                     html_dir = str(get_repo_root() / "docs" / "analysis")
+                    analyzed_lichess_url = lichess_url_map.get(id_to_analyze)
                     generate_html_report(moments, metadata, output_dir=html_dir, summary=summary,
-                                         move_evals=move_evals, lichess_url=last_analyzable_url)
+                                         move_evals=move_evals, lichess_url=analyzed_lichess_url)
                     regenerate_index_page(html_dir)
 
                     # Update cross-game analysis history

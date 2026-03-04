@@ -100,13 +100,13 @@ class TestSyncGames(unittest.TestCase):
         with patch("builtins.open", mock_open(read_data='{"imported_ids": ["123"]}' )):
             with patch("os.path.exists", return_value=True):
                 history = load_history()
-                self.assertEqual(history, {"imported_ids": ["123"], "monthly_studies": {}, "studied_ids": [], "last_analyzed_id": None})
+                self.assertEqual(history, {"imported_ids": ["123"], "last_analyzed_id": None})
 
     @patch('chess_tools.lib.data.history.get_history_file_path', return_value='data/history.json')
     def test_load_history_not_exists(self, mock_path):
         with patch("os.path.exists", return_value=False):
             history = load_history()
-            self.assertEqual(history, {"imported_ids": [], "monthly_studies": {}, "studied_ids": [], "last_analyzed_id": None})
+            self.assertEqual(history, {"imported_ids": [], "last_analyzed_id": None})
 
     @patch('chess_tools.lib.data.history.get_history_file_path', return_value='data/history.json')
     def test_save_history(self, mock_path):
@@ -124,7 +124,6 @@ class TestSyncGames(unittest.TestCase):
     @patch('chess_tools.transfer.sync.generate_markdown_report')
     @patch('chess_tools.transfer.sync.GoogleGeminiNarrator')
     @patch('chess_tools.transfer.sync.ChessAnalyzer')
-    @patch('chess_tools.transfer.sync.StudyManager')
     @patch('chess_tools.transfer.sync.time.sleep')
     @patch('chess_tools.transfer.sync.import_game_to_lichess')
     @patch('chess_tools.transfer.sync.get_games_from_archive')
@@ -132,10 +131,10 @@ class TestSyncGames(unittest.TestCase):
     @patch('chess_tools.transfer.sync.load_history')
     @patch('chess_tools.transfer.sync.save_history')
     @patch('chess_tools.transfer.sync.get_lichess_client')
-    def test_sync_pipeline(self, mock_get_client, mock_save_hist, mock_load_hist, mock_get_archives, mock_get_games, mock_import, mock_sleep, mock_study_manager_cls, mock_analyzer, mock_narrator, mock_report, mock_load_analysis, mock_format_history, mock_update_analysis, mock_save_analysis):
-        
-        mock_load_hist.return_value = {"imported_ids": ["old_game_id"], "monthly_studies": {}, "studied_ids": []}
-        
+    def test_sync_pipeline(self, mock_get_client, mock_save_hist, mock_load_hist, mock_get_archives, mock_get_games, mock_import, mock_sleep, mock_analyzer, mock_narrator, mock_report, mock_load_analysis, mock_format_history, mock_update_analysis, mock_save_analysis):
+
+        mock_load_hist.return_value = {"imported_ids": ["old_game_id"], "last_analyzed_id": None}
+
         # Mock Environment Variables
         with patch('os.getenv') as mock_getenv:
             def side_effect(key, default=None):
@@ -147,11 +146,11 @@ class TestSyncGames(unittest.TestCase):
             mock_getenv.side_effect = side_effect
 
             mock_get_archives.return_value = ['archive_url']
-            
+
             mock_get_games.return_value = [
                 {
                     'url': 'https://chess.com/game/live/old_game_id',
-                    'end_time': 1000, 
+                    'end_time': 1000,
                     'pgn': 'pgn1',
                     'time_class': 'blitz'
                 },
@@ -164,12 +163,8 @@ class TestSyncGames(unittest.TestCase):
                     'black': {'username': 'you'}
                 }
             ]
-            
+
             mock_import.return_value = ("IMPORTED", "http://lichess.org/game1")
-            
-            mock_study_manager = mock_study_manager_cls.return_value
-            mock_study_manager.find_study_by_name.return_value = "study_id_123"
-            mock_study_manager.add_game_to_study.return_value = True
 
             mock_analyzer_instance = mock_analyzer.return_value
             mock_analyzer_instance.__enter__.return_value = mock_analyzer_instance
@@ -181,9 +176,8 @@ class TestSyncGames(unittest.TestCase):
             # Verify core interactions
             mock_load_hist.assert_called_once()
             mock_import.assert_called_once()
-            mock_study_manager.add_game_to_study.assert_called_once()
             mock_save_hist.assert_called()
-            
+
             # Verify Analysis was triggered
             mock_analyzer_instance.analyze_game.assert_called()
             mock_report.assert_called()

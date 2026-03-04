@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Chess.com to Lichess sync and analysis system. Automatically imports games from Chess.com to Lichess, organizes Rapid games into monthly Lichess Studies, and generates analysis reports using Stockfish + Google Gemini LLM.
+Chess.com to Lichess sync and analysis system. Automatically imports games from Chess.com to Lichess and generates analysis reports using Stockfish + Google Gemini LLM.
 
 ## Commands
 
@@ -16,7 +16,7 @@ pytest --cov=src --cov-report=term-missing tests/
 
 ### Running Locally
 ```bash
-# Full sync pipeline (imports games, adds to studies, analyzes)
+# Full sync pipeline (imports games, analyzes latest)
 python run_sync.py
 
 # Standalone analysis (analyzes PGN or fetches latest Lichess game)
@@ -34,8 +34,7 @@ pip install -r requirements.txt
 
 1. **Sync Pipeline** (`run_sync.py` → `src/pipelines/sync.py`)
    - Fetches Chess.com archives → imports new games to Lichess
-   - Adds Rapid games (>20 moves) to monthly Lichess Studies
-   - Triggers analysis for transferred games
+   - Triggers analysis for the latest game
    - Maintains state in `data/history.json`
 
 2. **Analysis Pipeline** (`run_analysis.py` → `src/pipelines/analysis.py`)
@@ -45,7 +44,7 @@ pip install -r requirements.txt
 
 ### Key Modules
 
-- `src/api/lichess.py` - Lichess API client (imports, StudyManager)
+- `src/api/lichess.py` - Lichess API client (imports)
 - `src/api/chesscom.py` - Chess.com public API client
 - `src/analysis/engine.py` - Stockfish wrapper (`ChessAnalyzer` context manager)
 - `src/analysis/narrator.py` - LLM integration (abstract base + Gemini implementation)
@@ -57,10 +56,10 @@ pip install -r requirements.txt
 ### Data Flow
 
 ```
-Chess.com archives → Import to Lichess → Add to Study → Stockfish analysis → LLM narration → Markdown report
+Chess.com archives → Import to Lichess → Stockfish analysis → LLM narration → Markdown report
 ```
 
-State tracked in `data/history.json`: imported_ids, studied_ids, monthly_studies mapping, last_analyzed_id
+State tracked in `data/history.json`: imported_ids, last_analyzed_id
 
 ## Environment Variables
 
@@ -82,6 +81,3 @@ Optional:
 - **Tactical alerts**: Detects if blunder allows immediate capture of hanging pieces
 - **Rate limit handling**: 429 errors trigger backoff retry in Lichess client
 
-## Monthly Studies
-
-Lichess Studies must be manually created with exact naming: `Rapid Games - [Month] [Year]` (e.g., `Rapid Games - February 2026`). The sync pipeline finds and populates them automatically.
