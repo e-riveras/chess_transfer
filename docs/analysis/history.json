@@ -123,19 +123,6 @@
       "black": "markusfb66",
       "result": "1-0",
       "blunder_count": 0,
-      "missed_count": 3,
-      "tactics": [
-        "hanging_pawn",
-        "hanging_pawn",
-        "hanging_pawn"
-      ]
-    },
-    {
-      "date": "2026.02.28",
-      "white": "erivera90",
-      "black": "markusfb66",
-      "result": "1-0",
-      "blunder_count": 0,
       "missed_count": 4,
       "tactics": [
         "hanging_pawn",
@@ -255,6 +242,15 @@
       "tactics": [
         "losing_exchange"
       ]
+    },
+    {
+      "date": "2026.03.05",
+      "white": "erivera90",
+      "black": "Clementfnt92",
+      "result": "1-0",
+      "blunder_count": 0,
+      "missed_count": 0,
+      "tactics": []
     }
   ],
   "tactic_counts": {
