@@ -497,11 +497,14 @@ class ChessBoard {
             const dir = this.turn==='w' ? -1 : 1;
             const startRow = this.turn==='w' ? 6 : 1;
             if (c1===c2) {
+                // Forward push: only valid when not a capture
+                if (isCapture) return false;
                 if (dr===dir) return true;
                 if (r1===startRow && dr===2*dir && this.isPathClear(r1,c1,r2,c2)) return true;
                 return false;
             }
-            return Math.abs(c1-c2)===1 && dr===dir;
+            // Diagonal: only valid when capturing
+            return isCapture && Math.abs(c1-c2)===1 && dr===dir;
         }
         return false;
     }

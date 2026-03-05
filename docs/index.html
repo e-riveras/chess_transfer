@@ -498,18 +498,16 @@ class ChessBoard {
         if (type === 'P') {
             const direction = color === 'w' ? -1 : 1;
             const startRow = color === 'w' ? 6 : 1;
-            
-            // Forward
+
+            // Forward push: only valid when not a capture
             if (c1 === c2) {
+                if (isCapture) return false;
                 if (dr === direction) return true;
                 if (r1 === startRow && dr === 2 * direction && this.isPathClear(r1, c1, r2, c2)) return true;
                 return false;
-            } 
-            // Capture (Diagonal)
-            if (Math.abs(c1 - c2) === 1 && dr === direction) {
-                return true; 
             }
-            return false;
+            // Diagonal: only valid when capturing
+            return isCapture && Math.abs(c1 - c2) === 1 && dr === direction;
         }
         return false;
     }
