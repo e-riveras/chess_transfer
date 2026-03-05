@@ -136,19 +136,6 @@
       "black": "markusfb66",
       "result": "1-0",
       "blunder_count": 0,
-      "missed_count": 3,
-      "tactics": [
-        "hanging_pawn",
-        "hanging_pawn",
-        "hanging_pawn"
-      ]
-    },
-    {
-      "date": "2026.02.28",
-      "white": "erivera90",
-      "black": "markusfb66",
-      "result": "1-0",
-      "blunder_count": 0,
       "missed_count": 4,
       "tactics": [
         "hanging_pawn",
@@ -257,6 +244,17 @@
       "blunder_count": 0,
       "missed_count": 0,
       "tactics": []
+    },
+    {
+      "date": "2026.03.05",
+      "white": "erivera90",
+      "black": "sree-13",
+      "result": "0-1",
+      "blunder_count": 1,
+      "missed_count": 0,
+      "tactics": [
+        "losing_exchange"
+      ]
     }
   ],
   "tactic_counts": {
@@ -266,8 +264,9 @@
     "pin": 2,
     "skewer": 1,
     "discovered_attack": 2,
-    "hanging_piece": 2
+    "hanging_piece": 2,
+    "losing_exchange": 1
   },
-  "total_blunders": 7,
+  "total_blunders": 8,
   "total_missed": 216
 }
