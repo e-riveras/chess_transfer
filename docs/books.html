@@ -1,0 +1,1228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chess Book Reader</title>
+    <style>
+        :root {
+            --bg-color: #1a1a1a;
+            --text-color: #e0e0e0;
+            --card-bg: #2a2a2a;
+            --accent-color: #4a9eff;
+            --board-light: #f0d9b5;
+            --board-dark: #b58863;
+            --highlight-color: rgba(74, 158, 255, 0.5);
+            --comment-color: #b0b0b0;
+            --sideline-color: #f0c040;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+        }
+
+        h1, h2, h3 {
+            margin: 0.3em 0;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 16px 20px;
+        }
+
+        /* Header */
+        .header {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #333;
+        }
+
+        .header h1 {
+            font-size: 1.3rem;
+            color: var(--accent-color);
+            white-space: nowrap;
+        }
+
+        .header-selects {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            flex-wrap: wrap;
+            flex: 1;
+        }
+
+        select {
+            background: var(--card-bg);
+            color: var(--text-color);
+            border: 1px solid #444;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            max-width: 340px;
+        }
+
+        select:focus { outline: 1px solid var(--accent-color); }
+
+        label {
+            font-size: 0.85rem;
+            color: var(--comment-color);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        /* Two-column reader layout */
+        .reader-layout {
+            display: grid;
+            grid-template-columns: minmax(300px, 420px) 1fr;
+            gap: 24px;
+            align-items: start;
+        }
+
+        .board-column {
+            position: sticky;
+            top: 16px;
+        }
+
+        .moves-column {
+            height: calc(100vh - 100px);
+            overflow-y: auto;
+            padding-right: 6px;
+        }
+
+        /* Sideline banner */
+        .sideline-banner {
+            display: none;
+            background: #2a2000;
+            border: 1px solid var(--sideline-color);
+            border-radius: 6px;
+            padding: 8px 12px;
+            margin-bottom: 10px;
+            color: var(--sideline-color);
+            font-size: 0.85rem;
+            align-items: center;
+            gap: 10px;
+        }
+        .sideline-banner.active { display: flex; }
+
+        .sideline-banner-label { flex: 1; }
+
+        #btnExitSideline {
+            background: var(--sideline-color);
+            color: #1a1a1a;
+            border: none;
+            border-radius: 4px;
+            padding: 4px 10px;
+            cursor: pointer;
+            font-weight: 700;
+            font-size: 0.82rem;
+            white-space: nowrap;
+            transition: background 0.2s;
+        }
+        #btnExitSideline:hover { background: #ffd700; }
+
+        /* Board */
+        .chess-board {
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            grid-template-rows: repeat(8, 1fr);
+            width: 100%;
+            max-width: 420px;
+            aspect-ratio: 1;
+            border: 5px solid #4a3020;
+            user-select: none;
+        }
+
+        .square {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 2.5rem;
+            cursor: pointer;
+            position: relative;
+        }
+
+        .square.light { background-color: var(--board-light); color: black; }
+        .square.dark  { background-color: var(--board-dark);  color: black; }
+        .square.highlight  { box-shadow: inset 0 0 0 4px var(--accent-color); }
+        .square.last-move  { background-color: var(--highlight-color) !important; }
+
+        .controls {
+            display: flex;
+            gap: 8px;
+            margin-top: 10px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            background: var(--card-bg);
+            color: var(--text-color);
+            border: 1px solid var(--accent-color);
+            padding: 7px 14px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: background 0.2s;
+        }
+        button:hover  { background: var(--accent-color); color: #fff; }
+        button:disabled { border-color: #555; color: #555; cursor: not-allowed; background: var(--bg-color); }
+
+        /* Game Info */
+        .game-info {
+            background: var(--card-bg);
+            padding: 12px 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+
+        .game-meta {
+            font-size: 0.85rem;
+            color: var(--comment-color);
+            margin-top: 4px;
+        }
+
+        /* Moves List */
+        .moves-container {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            padding-bottom: 50px;
+        }
+
+        .move-pair {
+            background: var(--card-bg);
+            padding: 12px 15px;
+            border-radius: 8px;
+            display: grid;
+            grid-template-columns: 40px 1fr;
+            gap: 10px;
+            border-left: 4px solid transparent;
+            transition: background-color 0.2s;
+        }
+        .move-pair.active {
+            border-left-color: var(--accent-color);
+            background-color: #333;
+        }
+
+        .move-number {
+            font-weight: bold;
+            color: var(--accent-color);
+            font-size: 1.05rem;
+            text-align: right;
+            padding-right: 5px;
+            padding-top: 2px;
+        }
+
+        .ply-container { display: flex; flex-direction: column; gap: 5px; }
+
+        .ply-header {
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .move-text {
+            font-family: monospace;
+            font-size: 1.05rem;
+            font-weight: bold;
+            cursor: pointer;
+            padding: 2px 5px;
+            border-radius: 3px;
+            white-space: nowrap;
+        }
+        .move-text:hover    { background-color: rgba(255,255,255,0.1); }
+        .move-text.current  { background-color: var(--accent-color); color: white; }
+
+        .comment {
+            color: var(--comment-color);
+            font-style: italic;
+            font-size: 0.92rem;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            border-left: 2px solid #444;
+            padding-left: 10px;
+            margin-top: 4px;
+        }
+
+        /* Sideline links inside comments */
+        .sideline-link {
+            color: var(--sideline-color);
+            border-bottom: 1px dashed var(--sideline-color);
+            cursor: pointer;
+            font-style: normal;
+            padding: 0 1px;
+            border-radius: 2px;
+            transition: background 0.15s;
+        }
+        .sideline-link:hover { background: rgba(240,192,64,0.18); }
+
+        .variations {
+            margin-top: 5px;
+            margin-left: 0;
+            padding-left: 10px;
+            border-left: 2px solid #555;
+            font-size: 0.88rem;
+        }
+        .variation-line { margin-bottom: 4px; color: #aaa; }
+        .variation-move { cursor: pointer; color: var(--accent-color); margin: 0 2px; }
+        .variation-move:hover { text-decoration: underline; }
+
+        /* Loading state */
+        .loading-msg {
+            text-align: center;
+            color: #666;
+            padding: 40px;
+            font-size: 1rem;
+        }
+
+        /* Responsive */
+        @media (max-width: 800px) {
+            .reader-layout {
+                grid-template-columns: 1fr;
+            }
+            .board-column {
+                position: static;
+            }
+            .moves-column {
+                height: auto;
+                overflow-y: visible;
+            }
+            .chess-board { max-width: 100%; }
+            .square { font-size: 1.8rem; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        <h1>Chess Book Reader</h1>
+        <div class="header-selects">
+            <label>
+                Book:
+                <select id="bookSelect">
+                    <option value="">— select a book —</option>
+                    <option value="books/logical_chess_annotated.pgn">Logical Chess: Move by Move (Chernev)</option>
+                    <option value="books/iron_english_annotated.pgn">The Iron English</option>
+                    <option value="books/silman_reassess_annotated.pgn">How to Reassess Your Chess (Silman)</option>
+                </select>
+            </label>
+            <label id="game-selector" style="display:none">
+                Game:
+                <select id="gameSelect"></select>
+            </label>
+        </div>
+    </div>
+
+    <div class="reader-layout" id="readerLayout" style="display:none">
+        <!-- Left: board column -->
+        <div class="board-column">
+            <!-- Sideline mode banner -->
+            <div class="sideline-banner" id="sidelineBanner">
+                <span class="sideline-banner-label" id="sidelineLabel">Sideline</span>
+                <button id="btnExitSideline">← Back to main line</button>
+            </div>
+
+            <div class="game-info" id="gameMetadata">
+                <h2 id="gameTitle" style="font-size:1rem; margin:0 0 4px"></h2>
+                <div class="game-meta" id="gamePlayers"></div>
+                <div class="game-meta" id="gameEvent"></div>
+            </div>
+
+            <div id="board" class="chess-board"></div>
+
+            <div class="controls">
+                <button id="btnStart" title="Go to Start">⏮</button>
+                <button id="btnPrev"  title="Previous Move">◀</button>
+                <button id="btnNext"  title="Next Move">▶</button>
+                <button id="btnFlip"  title="Flip Board">🔁</button>
+            </div>
+        </div>
+
+        <!-- Right: moves column -->
+        <div class="moves-column">
+            <div id="movesList" class="moves-container"></div>
+        </div>
+    </div>
+
+    <div id="uploadPrompt" class="loading-msg">Select a book above to begin reading.</div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────────
+// Constants & Utilities
+// ─────────────────────────────────────────────────────────────────────────────
+const PIECES = {
+    'w': { 'P': '♟', 'N': '♞', 'B': '♝', 'R': '♜', 'Q': '♛', 'K': '♔' },
+    'b': { 'P': '♟', 'N': '♞', 'B': '♝', 'R': '♜', 'Q': '♛', 'K': '♚' }
+};
+const FILES = ['a','b','c','d','e','f','g','h'];
+const RANKS = ['1','2','3','4','5','6','7','8'];
+
+function getSquareName(row, col) { return FILES[col] + RANKS[7 - row]; }
+function getSquareCoords(sq) {
+    return { row: 7 - RANKS.indexOf(sq[1]), col: FILES.indexOf(sq[0]) };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ChessBoard
+// ─────────────────────────────────────────────────────────────────────────────
+class ChessBoard {
+    constructor() {
+        this.board = Array(8).fill(null).map(() => Array(8).fill(null));
+        this.turn = 'w';
+        this.castling = { w: { K: true, Q: true }, b: { k: true, q: true } };
+        this.enPassant = null;
+        this.reset();
+    }
+
+    reset() {
+        this.board = Array(8).fill(null).map(() => Array(8).fill(null));
+        'rnbqkbnr'.split('').forEach((p, c) => this.board[0][c] = { color:'b', type:p.toUpperCase() });
+        'pppppppp'.split('').forEach((p, c) => this.board[1][c] = { color:'b', type:'P' });
+        'PPPPPPPP'.split('').forEach((p, c) => this.board[6][c] = { color:'w', type:'P' });
+        'RNBQKBNR'.split('').forEach((p, c) => this.board[7][c] = { color:'w', type:p });
+        this.turn = 'w';
+        this.castling = { w: { K: true, Q: true }, b: { k: true, q: true } };
+        this.enPassant = null;
+    }
+
+    clone() {
+        const nb = new ChessBoard();
+        nb.board = this.board.map(r => r.map(p => p ? { ...p } : null));
+        nb.turn = this.turn;
+        nb.castling = JSON.parse(JSON.stringify(this.castling));
+        nb.enPassant = this.enPassant;
+        return nb;
+    }
+
+    getPiece(row, col) {
+        if (row < 0 || row > 7 || col < 0 || col > 7) return null;
+        return this.board[row][col];
+    }
+
+    makeMove(moveSan) {
+        const cleanSan = moveSan.replace(/[+#?!]/g, '');
+        let move = null;
+
+        if (cleanSan === 'O-O' || cleanSan === '0-0') {
+            const row = this.turn === 'w' ? 7 : 0;
+            move = { from:{row,col:4}, to:{row,col:6}, isCastle:true,
+                     rookFrom:{row,col:7}, rookTo:{row,col:5} };
+        } else if (cleanSan === 'O-O-O' || cleanSan === '0-0-0') {
+            const row = this.turn === 'w' ? 7 : 0;
+            move = { from:{row,col:4}, to:{row,col:2}, isCastle:true,
+                     rookFrom:{row,col:0}, rookTo:{row,col:3} };
+        } else {
+            const match = cleanSan.match(/([KQRBN])?([a-h])?([1-8])?x?([a-h][1-8])(=[QRBN])?/);
+            if (!match) return null;
+
+            const pieceType = match[1] || 'P';
+            const fromFile  = match[2];
+            const fromRank  = match[3];
+            const dest      = match[4];
+            const promotion = match[5] ? match[5][1] : null;
+
+            const { row: toRow, col: toCol } = getSquareCoords(dest);
+
+            const candidates = [];
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    const p = this.board[r][c];
+                    if (p && p.color === this.turn && p.type === pieceType) {
+                        if (fromFile && FILES[c] !== fromFile) continue;
+                        if (fromRank && RANKS[7-r] !== fromRank) continue;
+                        candidates.push({ row:r, col:c });
+                    }
+                }
+            }
+            if (candidates.length === 0) return null;
+
+            let from = null;
+            if (candidates.length === 1) {
+                from = candidates[0];
+            } else {
+                const legal = candidates.filter(c =>
+                    this.canMove(c.row, c.col, toRow, toCol, pieceType, cleanSan.includes('x'))
+                );
+                from = legal.length > 0 ? legal[0] : candidates[0];
+            }
+            move = { from, to:{ row:toRow, col:toCol }, promotion };
+        }
+
+        if (!move) return null;
+        const p = this.board[move.from.row][move.from.col];
+        if (!p) return null;
+        this.board[move.to.row][move.to.col] = p;
+        this.board[move.from.row][move.from.col] = null;
+
+        if (move.isCastle) {
+            const rook = this.board[move.rookFrom.row][move.rookFrom.col];
+            this.board[move.rookTo.row][move.rookTo.col] = rook;
+            this.board[move.rookFrom.row][move.rookFrom.col] = null;
+        }
+        if (move.promotion) {
+            this.board[move.to.row][move.to.col].type = move.promotion;
+        }
+
+        this.turn = this.turn === 'w' ? 'b' : 'w';
+        return move;
+    }
+
+    canMove(r1, c1, r2, c2, type, isCapture) {
+        const dr = r2-r1, dc = c2-c1, absDr = Math.abs(dr), absDc = Math.abs(dc);
+        type = type.toUpperCase();
+        if (type==='N') return (absDr===2&&absDc===1)||(absDr===1&&absDc===2);
+        if (type==='B') return absDr===absDc && this.isPathClear(r1,c1,r2,c2);
+        if (type==='R') return (dr===0||dc===0) && this.isPathClear(r1,c1,r2,c2);
+        if (type==='Q') return (dr===0||dc===0||absDr===absDc) && this.isPathClear(r1,c1,r2,c2);
+        if (type==='K') return absDr<=1 && absDc<=1;
+        if (type==='P') {
+            const dir = this.turn==='w' ? -1 : 1;
+            const startRow = this.turn==='w' ? 6 : 1;
+            if (c1===c2) {
+                if (dr===dir) return true;
+                if (r1===startRow && dr===2*dir && this.isPathClear(r1,c1,r2,c2)) return true;
+                return false;
+            }
+            return Math.abs(c1-c2)===1 && dr===dir;
+        }
+        return false;
+    }
+
+    isPathClear(r1, c1, r2, c2) {
+        const dr = Math.sign(r2-r1), dc = Math.sign(c2-c1);
+        let r=r1+dr, c=c1+dc;
+        while (r!==r2||c!==c2) {
+            if (this.board[r][c]) return false;
+            r+=dr; c+=dc;
+        }
+        return true;
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PGN Parser (unchanged from index.html)
+// ─────────────────────────────────────────────────────────────────────────────
+class PGNParser {
+    static parse(pgnText) {
+        const games = [];
+        const text = pgnText.replace(/\r\n/g, '\n');
+        const lines = text.split('\n');
+        let currentGame = { headers:{}, rawMoves:"" };
+        let inMoves = false;
+
+        for (let line of lines) {
+            line = line.trim();
+            if (!line) continue;
+            if (line.startsWith('[')) {
+                if (inMoves) {
+                    games.push(this.processGame(currentGame));
+                    currentGame = { headers:{}, rawMoves:"" };
+                    inMoves = false;
+                }
+                const match = line.match(/^\[(\w+)\s+"(.*)"\]$/);
+                if (match) currentGame.headers[match[1]] = match[2];
+            } else {
+                inMoves = true;
+                currentGame.rawMoves += " " + line;
+            }
+        }
+        if (currentGame.rawMoves) games.push(this.processGame(currentGame));
+        return games;
+    }
+
+    static processGame(gameData) {
+        let raw = gameData.rawMoves;
+        raw = this.sanitize(raw);
+        raw = raw.replace(/\s*(1-0|0-1|1\/2-1\/2|\*)\s*$/, '');
+        const tokens = this.tokenize(raw);
+        return { headers: gameData.headers, moves: this.buildMoveTree(tokens) };
+    }
+
+    static sanitize(text) {
+        text = text.replace(/(\d+\.)([^\s\.])/g, '$1 $2');
+        text = text.replace(/(\d+\.\.\.)([^\s])/g, '$1 $2');
+        return text;
+    }
+
+    static tokenize(text) {
+        const tokens = [];
+        let current = "", inComment = false;
+        for (let i = 0; i < text.length; i++) {
+            const ch = text[i];
+            if (inComment) {
+                if (ch==='}') { tokens.push({type:'comment',value:current.trim()}); current=""; inComment=false; }
+                else current += ch;
+                continue;
+            }
+            if (ch==='{') { if (current.trim()) tokens.push({type:'text',value:current.trim()}); current=""; inComment=true; continue; }
+            if (ch==='('||ch===')') { if (current.trim()) tokens.push({type:'text',value:current.trim()}); tokens.push({type:'symbol',value:ch}); current=""; continue; }
+            current += ch;
+        }
+        if (current.trim()) tokens.push({type:'text',value:current.trim()});
+        const finalTokens = [];
+        tokens.forEach(t => {
+            if (t.type!=='text') { finalTokens.push(t); return; }
+            t.value.split(/\s+/).forEach(p => {
+                if (!p) return;
+                if (/^\d+\.+$/.test(p)) return;
+                finalTokens.push({type:'move',value:p});
+            });
+        });
+        return finalTokens;
+    }
+
+    static buildMoveTree(tokens) {
+        const root = [], stack = [root];
+        let currentList = root;
+        for (let token of tokens) {
+            if (token.type==='symbol' && token.value==='(') {
+                if (currentList.length===0) continue;
+                const lastMove = currentList[currentList.length-1];
+                if (!lastMove.variations) lastMove.variations = [];
+                const newVar = [];
+                lastMove.variations.push(newVar);
+                stack.push(currentList);
+                currentList = newVar;
+            } else if (token.type==='symbol' && token.value===')') {
+                if (stack.length>1) { stack.pop(); currentList = stack[stack.length-1]; }
+            } else if (token.type==='comment') {
+                if (currentList.length>0) {
+                    const last = currentList[currentList.length-1];
+                    last.comments = last.comments || [];
+                    last.comments.push(token.value);
+                }
+            } else if (token.type==='move') {
+                let san = token.value.replace(/^\d+\.+/, '');
+                if (!san) continue;
+                currentList.push({ san, comments:[], variations:[] });
+            }
+        }
+        return root;
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// detectMovesInComment(text, board)
+// Finds prose move sequences (≥2 consecutive valid SAN moves) in a comment
+// and returns an array of text/sideline segments.
+// ─────────────────────────────────────────────────────────────────────────────
+function detectMovesInComment(text, board) {
+    // Normalize ellipsis characters → "..."
+    const norm = text.replace(/\u2026/g, '...').replace(/\u2013|\u2014/g, '-');
+
+    // Collect word tokens with positions
+    const words = [];
+    const re = /\S+/g;
+    let m;
+    while ((m = re.exec(norm)) !== null) {
+        words.push({ word: m[0], start: m.index, end: m.index + m[0].length });
+    }
+
+    // Strip evaluation/result noise from a token, returning clean SAN candidate
+    function cleanSan(w) {
+        return w.replace(/[,;.]$/, '').replace(/[!?]{1,2}$/, '');
+    }
+
+    // Minimum-length SAN check: must match a plausible chess move pattern
+    // Requires at least 2 chars (e.g. "e4", not a bare letter)
+    function looksLikeSan(w) {
+        const c = cleanSan(w);
+        if (c.length < 2) return false;
+        return /^(O-O-O|O-O|[NBRQK]?[a-h]?[1-8]?x?[a-h][1-8](?:=[NBRQ])?[+#]?)$/.test(c);
+    }
+
+    const segments = [];
+    let lastSegEnd = 0;
+    let i = 0;
+
+    while (i < words.length) {
+        const w = words[i];
+
+        // Look for a move-number anchor: "5.", "5..." or "5..." glued to SAN ("5.Nf3")
+        const mnMatch = w.word.match(/^(\d+)(\.{1,3})(.*)$/);
+        if (!mnMatch) { i++; continue; }
+
+        const attached = mnMatch[3]; // possibly SAN glued: "Nf3" from "5.Nf3"
+        let tempBoard = board.clone();
+        const seqMoves = [];
+        let j = i;
+        let seqEnd = w.end;
+
+        // Try to get first SAN (attached to move number, or next word)
+        let firstSan = null;
+        if (attached) {
+            firstSan = cleanSan(attached);
+            if (!looksLikeSan(firstSan)) firstSan = null;
+        }
+        if (!firstSan && j + 1 < words.length) {
+            const candidate = cleanSan(words[j + 1].word);
+            if (looksLikeSan(candidate)) {
+                firstSan = candidate;
+                j++; // consume the separate word
+                seqEnd = words[j].end;
+            }
+        }
+
+        if (firstSan) {
+            const result = tempBoard.makeMove(firstSan);
+            if (result !== null) {
+                seqMoves.push(firstSan);
+                j++;
+
+                // Greedily consume further moves
+                while (j < words.length) {
+                    const nw = words[j];
+                    // Could be "6.Nf3" or "6..." or "6. ..." then next word
+                    const nextMn = nw.word.match(/^(\d+)(\.{1,3})(.*)$/);
+                    let nextSan = null;
+                    let consume = 1;
+
+                    if (nextMn) {
+                        if (nextMn[3]) {
+                            nextSan = cleanSan(nextMn[3]);
+                        } else if (j + 1 < words.length) {
+                            nextSan = cleanSan(words[j + 1].word);
+                            consume = 2;
+                        }
+                    } else {
+                        nextSan = cleanSan(nw.word);
+                    }
+
+                    if (!nextSan || !looksLikeSan(nextSan)) break;
+
+                    const r = tempBoard.makeMove(nextSan);
+                    if (r === null) break;
+
+                    seqMoves.push(nextSan);
+                    seqEnd = words[j + consume - 1].end;
+                    j += consume;
+                }
+            }
+        }
+
+        // Only emit as a sideline if ≥2 moves validated (avoids single-move false positives)
+        if (seqMoves.length >= 2) {
+            const seqStart = w.start;
+            if (seqStart > lastSegEnd) {
+                segments.push({ type: 'text', content: norm.slice(lastSegEnd, seqStart) });
+            }
+            segments.push({
+                type: 'sideline',
+                content: norm.slice(seqStart, seqEnd),
+                moves: seqMoves
+            });
+            lastSegEnd = seqEnd;
+            i = j;
+        } else {
+            i++;
+        }
+    }
+
+    if (lastSegEnd < norm.length) {
+        segments.push({ type: 'text', content: norm.slice(lastSegEnd) });
+    }
+
+    return segments;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ChessApp
+// ─────────────────────────────────────────────────────────────────────────────
+class ChessApp {
+    constructor() {
+        this.board = new ChessBoard();
+        this.games = [];
+        this.currentGameIndex = 0;
+        this.movesFlatList = [];
+        this.currentPly = -1;
+        this.history = [];
+        this.isFlipped = false;
+
+        // Sideline state
+        this.sidelineMode = false;
+        this.sidelineMoves = [];
+        this.sidelineBoards = [];  // boards[0]=origin, boards[1]=after move 1, etc.
+        this.sidelineIndex = 0;    // which sideline move is currently shown (1-based into sidelineBoards)
+        this.sidelineOriginPly = -1;
+
+        this.ui = {
+            board:          document.getElementById('board'),
+            movesList:      document.getElementById('movesList'),
+            bookSelect:     document.getElementById('bookSelect'),
+            gameSelect:     document.getElementById('gameSelect'),
+            gameSelectorDiv: document.getElementById('game-selector'),
+            readerLayout:   document.getElementById('readerLayout'),
+            uploadPrompt:   document.getElementById('uploadPrompt'),
+            sidelineBanner: document.getElementById('sidelineBanner'),
+            sidelineLabel:  document.getElementById('sidelineLabel'),
+            meta: {
+                container: document.getElementById('gameMetadata'),
+                title:     document.getElementById('gameTitle'),
+                players:   document.getElementById('gamePlayers'),
+                event:     document.getElementById('gameEvent')
+            },
+            btns: {
+                start: document.getElementById('btnStart'),
+                prev:  document.getElementById('btnPrev'),
+                next:  document.getElementById('btnNext'),
+                flip:  document.getElementById('btnFlip'),
+                exit:  document.getElementById('btnExitSideline')
+            }
+        };
+
+        this.initListeners();
+        this.renderBoard();
+    }
+
+    initListeners() {
+        this.ui.bookSelect.addEventListener('change', (e) => {
+            const file = e.target.value;
+            if (!file) return;
+            this.loadBook(file);
+        });
+
+        this.ui.gameSelect.addEventListener('change', (e) => {
+            this.loadGame(parseInt(e.target.value));
+        });
+
+        this.ui.btns.start.addEventListener('click', () => {
+            if (this.sidelineMode) this.exitSideline();
+            else this.goToPly(-1);
+        });
+        this.ui.btns.prev.addEventListener('click', () => {
+            if (this.sidelineMode) this.sidelinePrev();
+            else this.goToPly(this.currentPly - 1);
+        });
+        this.ui.btns.next.addEventListener('click', () => {
+            if (this.sidelineMode) this.sidelineNext();
+            else this.goToPly(this.currentPly + 1);
+        });
+        this.ui.btns.flip.addEventListener('click', () => this.flipBoard());
+        this.ui.btns.exit.addEventListener('click', () => this.exitSideline());
+
+        document.addEventListener('keydown', (e) => {
+            // Ignore keypresses when focus is on a select element
+            if (document.activeElement.tagName === 'SELECT') return;
+            if (e.key === 'ArrowLeft') {
+                if (this.sidelineMode) this.sidelinePrev();
+                else this.goToPly(this.currentPly - 1);
+            }
+            if (e.key === 'ArrowRight') {
+                if (this.sidelineMode) this.sidelineNext();
+                else this.goToPly(this.currentPly + 1);
+            }
+            if (e.key === 'Escape' && this.sidelineMode) {
+                this.exitSideline();
+            }
+        });
+    }
+
+    // ── Book loading ──────────────────────────────────────────────────────────
+
+    async loadBook(url) {
+        this.ui.uploadPrompt.textContent = 'Loading…';
+        this.ui.uploadPrompt.style.display = 'block';
+        this.ui.readerLayout.style.display = 'none';
+
+        try {
+            const resp = await fetch(url);
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            const text = await resp.text();
+            this.games = PGNParser.parse(text);
+            this.updateGameSelector();
+            if (this.games.length > 0) {
+                this.ui.uploadPrompt.style.display = 'none';
+                this.ui.readerLayout.style.display = 'grid';
+                this.loadGame(0);
+            }
+        } catch (err) {
+            this.ui.uploadPrompt.textContent = 'Error loading book: ' + err.message;
+            console.error(err);
+        }
+    }
+
+    updateGameSelector() {
+        if (this.games.length <= 1) {
+            this.ui.gameSelectorDiv.style.display = 'none';
+        } else {
+            this.ui.gameSelectorDiv.style.display = 'flex';
+            this.ui.gameSelect.innerHTML = '';
+            this.games.forEach((g, i) => {
+                const opt = document.createElement('option');
+                opt.value = i;
+                const white = g.headers.White || '?';
+                const black = g.headers.Black || '?';
+                const date  = g.headers.Date  || '?';
+                opt.text = `${i+1}. ${white} vs ${black} (${date})`;
+                this.ui.gameSelect.appendChild(opt);
+            });
+        }
+    }
+
+    // ── Game loading ──────────────────────────────────────────────────────────
+
+    loadGame(index) {
+        // Exit any active sideline
+        this._exitSidelineQuiet();
+
+        this.currentGameIndex = index;
+        const game = this.games[index];
+
+        // Update metadata
+        this.ui.meta.title.textContent   = game.headers.Event || 'Unknown Event';
+        this.ui.meta.players.textContent = `${game.headers.White || '?'} vs ${game.headers.Black || '?'}`;
+        this.ui.meta.event.textContent   = `Result: ${game.headers.Result || '*'} | Date: ${game.headers.Date || '?'}`;
+
+        // Reset state
+        this.board.reset();
+        this.history = [this.board.clone()];
+        this.currentPly = -1;
+        this.movesFlatList = [];
+        this.ui.movesList.innerHTML = '';
+
+        let moveNum = 1;
+        let whiteMove = null;
+        let activePairDiv = null;
+
+        const processLine = (moves) => {
+            for (const move of moves) {
+                const moveData = this.board.makeMove(move.san);
+                if (!moveData) {
+                    console.warn('Invalid move in PGN:', move.san);
+                    break;
+                }
+
+                this.history.push(this.board.clone());
+                const plyIndex = this.history.length - 2; // 0-based
+                const ply = plyIndex + 1;                 // 1-based UI ply
+
+                this.movesFlatList.push({
+                    ply,
+                    san: move.san,
+                    elementId: `move-${ply}`
+                });
+
+                // Board state for sideline detection: AFTER this move
+                // (the board at history[ply] = history[plyIndex+1])
+                const boardAfterMove = this.history[ply];
+
+                const isWhite = (this.history.length % 2 === 0);
+
+                if (isWhite) {
+                    activePairDiv = document.createElement('div');
+                    activePairDiv.className = 'move-pair';
+                    activePairDiv.dataset.moveNum = moveNum;
+
+                    const numSpan = document.createElement('div');
+                    numSpan.className = 'move-number';
+                    numSpan.textContent = `${moveNum}.`;
+                    activePairDiv.appendChild(numSpan);
+
+                    const contentDiv = document.createElement('div');
+                    contentDiv.className = 'ply-container';
+                    activePairDiv.appendChild(contentDiv);
+
+                    const headerDiv = document.createElement('div');
+                    headerDiv.className = 'ply-header';
+                    contentDiv.appendChild(headerDiv);
+
+                    const wSpan = this.createMoveSpan(move.san, ply);
+                    headerDiv.appendChild(wSpan);
+
+                    if (move.comments && move.comments.length) {
+                        this.renderComment(contentDiv, move.comments.join(' '), ply, boardAfterMove);
+                    }
+                    if (move.variations && move.variations.length) {
+                        this.renderVariations(contentDiv, move.variations, plyIndex);
+                    }
+
+                    this.ui.movesList.appendChild(activePairDiv);
+                    whiteMove = { div: contentDiv, header: headerDiv };
+                } else {
+                    if (!activePairDiv) {
+                        activePairDiv = document.createElement('div');
+                        activePairDiv.className = 'move-pair';
+                        this.ui.movesList.appendChild(activePairDiv);
+                    }
+
+                    const bSpan = this.createMoveSpan(move.san, ply);
+                    whiteMove.header.appendChild(bSpan);
+
+                    if (move.comments && move.comments.length) {
+                        this.renderComment(whiteMove.div, move.comments.join(' '), ply, boardAfterMove);
+                    }
+                    if (move.variations && move.variations.length) {
+                        this.renderVariations(whiteMove.div, move.variations, plyIndex);
+                    }
+
+                    moveNum++;
+                    whiteMove = null;
+                }
+            }
+        };
+
+        processLine(game.moves);
+        this.goToPly(-1);
+    }
+
+    // ── Comment rendering with sideline detection ─────────────────────────────
+
+    renderComment(container, text, ply, boardAfterMove) {
+        const cDiv = document.createElement('div');
+        cDiv.className = 'comment';
+
+        let segments;
+        try {
+            segments = detectMovesInComment(text, boardAfterMove);
+        } catch (e) {
+            segments = [{ type: 'text', content: text }];
+        }
+
+        for (const seg of segments) {
+            if (seg.type === 'text') {
+                cDiv.appendChild(document.createTextNode(seg.content));
+            } else {
+                const link = document.createElement('span');
+                link.className = 'sideline-link';
+                link.textContent = seg.content;
+                link.title = `Explore sideline: ${seg.moves.join(' ')}`;
+                link.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.enterSideline(seg.moves, ply, boardAfterMove);
+                });
+                cDiv.appendChild(link);
+            }
+        }
+
+        container.appendChild(cDiv);
+    }
+
+    // ── Sideline navigation ───────────────────────────────────────────────────
+
+    enterSideline(sanMoves, originPly, boardAtOrigin) {
+        // Build board snapshots for each sideline position
+        this.sidelineMode = true;
+        this.sidelineOriginPly = originPly;
+        this.sidelineMoves = sanMoves;
+        this.sidelineBoards = [boardAtOrigin.clone()];
+
+        const temp = boardAtOrigin.clone();
+        for (const san of sanMoves) {
+            const r = temp.makeMove(san);
+            if (!r) break;
+            this.sidelineBoards.push(temp.clone());
+        }
+
+        // Start at first sideline move
+        this.sidelineIndex = 1;
+        this._renderSidelinePosition();
+        this._updateSidelineBanner();
+
+        // Disable start button while in sideline
+        this.ui.btns.start.disabled = true;
+    }
+
+    exitSideline() {
+        const returnPly = this.sidelineOriginPly - 1; // convert 1-based ply to 0-based goToPly index
+        this._exitSidelineQuiet();
+        this.goToPly(returnPly);
+    }
+
+    _exitSidelineQuiet() {
+        if (!this.sidelineMode) return;
+        this.sidelineMode = false;
+        this.sidelineMoves = [];
+        this.sidelineBoards = [];
+        this.sidelineIndex = 0;
+        this.sidelineOriginPly = -1;
+        this.ui.sidelineBanner.classList.remove('active');
+    }
+
+    sidelineNext() {
+        if (!this.sidelineMode) return;
+        if (this.sidelineIndex < this.sidelineBoards.length - 1) {
+            this.sidelineIndex++;
+            this._renderSidelinePosition();
+            this._updateSidelineBanner();
+        }
+    }
+
+    sidelinePrev() {
+        if (!this.sidelineMode) return;
+        if (this.sidelineIndex > 1) {
+            this.sidelineIndex--;
+            this._renderSidelinePosition();
+            this._updateSidelineBanner();
+        } else {
+            // At first move — exit back to main line
+            this.exitSideline();
+        }
+    }
+
+    _renderSidelinePosition() {
+        const boardToShow = this.sidelineBoards[this.sidelineIndex];
+        if (boardToShow) this.renderBoardState(boardToShow);
+        this.ui.btns.prev.disabled = false;
+        this.ui.btns.next.disabled = (this.sidelineIndex >= this.sidelineBoards.length - 1);
+    }
+
+    _updateSidelineBanner() {
+        const total = this.sidelineBoards.length - 1; // number of playable moves
+        const played = this.sidelineMoves.slice(0, this.sidelineIndex).join(' ');
+        const current = this.sidelineMoves[this.sidelineIndex - 1] || '';
+        this.ui.sidelineLabel.textContent =
+            `Sideline (${this.sidelineIndex}/${total}): ${played}`;
+        this.ui.sidelineBanner.classList.add('active');
+    }
+
+    // ── Main navigation ───────────────────────────────────────────────────────
+
+    goToPly(ply) {
+        // Exit sideline quietly when navigating main line
+        if (this.sidelineMode) {
+            this._exitSidelineQuiet();
+        }
+
+        if (ply < -1) ply = -1;
+        if (ply >= this.movesFlatList.length) ply = this.movesFlatList.length - 1;
+
+        this.currentPly = ply;
+
+        const state = this.history[ply + 1];
+        this.renderBoardState(state);
+
+        document.querySelectorAll('.move-text.current').forEach(el => el.classList.remove('current'));
+        document.querySelectorAll('.move-pair.active').forEach(el => el.classList.remove('active'));
+
+        if (ply >= 0) {
+            const moveData = this.movesFlatList[ply];
+            const el = document.getElementById(moveData.elementId);
+            if (el) {
+                el.classList.add('current');
+                el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                const card = el.closest('.move-pair');
+                if (card) card.classList.add('active');
+            }
+        }
+
+        this.ui.btns.start.disabled = (ply === -1);
+        this.ui.btns.prev.disabled  = (ply === -1);
+        this.ui.btns.next.disabled  = (ply === this.movesFlatList.length - 1);
+    }
+
+    // ── Board rendering ───────────────────────────────────────────────────────
+
+    createMoveSpan(text, ply) {
+        const span = document.createElement('span');
+        span.className = 'move-text';
+        span.textContent = text;
+        span.id = `move-${ply}`;
+        span.onclick = (e) => {
+            e.stopPropagation();
+            if (this.sidelineMode) this._exitSidelineQuiet();
+            this.goToPly(ply - 1); // ply is 1-based; goToPly expects 0-based index
+        };
+        return span;
+    }
+
+    renderVariations(container, variations, basePly) {
+        const varsDiv = document.createElement('div');
+        varsDiv.className = 'variations';
+        variations.forEach(line => {
+            const lineDiv = document.createElement('div');
+            lineDiv.className = 'variation-line';
+            lineDiv.appendChild(document.createTextNode('('));
+            line.forEach((m, i) => {
+                const span = document.createElement('span');
+                span.className = 'variation-move';
+                span.textContent = m.san;
+                span.onclick = (e) => {
+                    e.stopPropagation();
+                    this.showVariation(basePly, line, i);
+                };
+                lineDiv.appendChild(span);
+                lineDiv.appendChild(document.createTextNode(' '));
+            });
+            lineDiv.appendChild(document.createTextNode(')'));
+            varsDiv.appendChild(lineDiv);
+        });
+        container.appendChild(varsDiv);
+    }
+
+    showVariation(basePly, lineMoves, targetIndex) {
+        const baseBoard = this.history[basePly];
+        if (!baseBoard) return;
+        const temp = baseBoard.clone();
+        for (let i = 0; i <= targetIndex; i++) temp.makeMove(lineMoves[i].san);
+        this.renderBoardState(temp);
+        document.querySelectorAll('.move-text.current').forEach(el => el.classList.remove('current'));
+        document.querySelectorAll('.move-pair.active').forEach(el => el.classList.remove('active'));
+    }
+
+    renderBoardState(boardObj) {
+        const board = this.ui.board;
+        board.innerHTML = '';
+        const rows = this.isFlipped ? [7,6,5,4,3,2,1,0] : [0,1,2,3,4,5,6,7];
+        const cols = this.isFlipped ? [7,6,5,4,3,2,1,0] : [0,1,2,3,4,5,6,7];
+        rows.forEach(r => {
+            cols.forEach(c => {
+                const sq = document.createElement('div');
+                const isLight = (r + c) % 2 !== 0;
+                sq.className = `square ${isLight ? 'light' : 'dark'}`;
+                const piece = boardObj.board[r][c];
+                if (piece) {
+                    sq.textContent = PIECES[piece.color][piece.type];
+                    if (piece.color === 'w') {
+                        sq.style.color = '#fff';
+                        sq.style.textShadow = '0 0 2px #000, 0 0 5px rgba(0,0,0,0.5)';
+                    } else {
+                        sq.style.color = '#000';
+                        sq.style.textShadow = '0 0 1px #fff';
+                    }
+                }
+                board.appendChild(sq);
+            });
+        });
+    }
+
+    renderBoard() { this.renderBoardState(this.board); }
+
+    flipBoard() {
+        this.isFlipped = !this.isFlipped;
+        if (this.sidelineMode) {
+            this._renderSidelinePosition();
+        } else if (this.currentPly === -1) {
+            this.renderBoardState(this.history[0]);
+        } else {
+            this.renderBoardState(this.history[this.currentPly + 1]);
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Init
+// ─────────────────────────────────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', () => {
+    window.chessApp = new ChessApp();
+});
+</script>
+</body>
+</html>
